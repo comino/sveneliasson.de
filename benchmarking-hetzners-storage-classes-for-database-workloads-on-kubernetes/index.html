@@ -1,0 +1,138 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Hetzner Storage Classes Comparison on Kubernetes</title><meta name="description" content="Hetzner Storage Classes Comparison on Kubernetes"><link rel="canonical" href="https://sveneliasson.de/benchmarking-hetzners-storage-classes-for-database-workloads-on-kubernetes/"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><meta property="og:title" content="Hetzner Storage Classes Comparison on Kubernetes"><meta property="og:description" content="Hetzner Storage Classes Comparison on Kubernetes"><meta property="og:type" content="article"><meta property="og:url" content="https://sveneliasson.de/benchmarking-hetzners-storage-classes-for-database-workloads-on-kubernetes/"><link rel="alternate" type="application/rss+xml" title="Sven Eliasson" href="/rss.xml"><link rel="sitemap" href="/sitemap-index.xml"><link rel="stylesheet" href="/_astro/_slug_.RFOjj78o.css">
+<style>.post-header[data-astro-cid-yvbahnfj]{margin-bottom:2rem}.back[data-astro-cid-yvbahnfj]{margin-right:.5rem}
+</style></head> <body> <header class="site"> <div class="wrap"> <a href="/" class="brand"><span class="prompt">~$</span> sven.eliasson</a> <nav> <a href="/">writing</a> <a href="/about/">about</a> <a href="/rss.xml">rss</a> </nav> </div> </header> <main class="wrap">  <article data-astro-cid-yvbahnfj> <header class="post-header" data-astro-cid-yvbahnfj> <p class="meta" data-astro-cid-yvbahnfj> <a href="/" class="back" data-astro-cid-yvbahnfj>←</a> 27 Apr 2024 · 4 min read
+</p> <h1 data-astro-cid-yvbahnfj>Benchmarking Hetzner&#39;s Storage Classes for Database Workloads on Kubernetes</h1> <ul class="chips" aria-label="Tags" data-astro-cid-yvbahnfj> <li class="chip" data-astro-cid-yvbahnfj>hetzner</li><li class="chip" data-astro-cid-yvbahnfj>kubernetes</li><li class="chip" data-astro-cid-yvbahnfj>databases</li> </ul> </header> <blockquote>
+<p>TLDR: Running Kubernetes on Hetzner offers cost-effective options, but handling production workloads, especially stateful ones like databases, raises concerns. Hetzner provides instance and cloud volume storage options with significant differences in IOPS performance. Longhorn, a distributed block storage system, can be used to leverage local volumes, but benchmarks show a slowdown compared to raw local files. Probably host a datatbase either on a dedicated host or use a hosted option instead.</p>
+</blockquote>
+<p>Running Kubernetes on Hetzner is likely one of the most cost-effective options available. The <a href="https://github.com/kube-hetzner/terraform-hcloud-kube-hetzner">Hetzeners Terrraform Kubernetes</a> project simplifies the process of setting up a basic cluster within minutes. However, is this sufficient for handling production workloads?</p>
+<p>One controversial topic about running a Kubernetes cluster is whether one should run stateful workloads like databases on Kubernetes. There are valid arguments for both sides. I used to avoid running databases on Kubernetes, but changed my mind. I think the widespread adoption of Kubernetes operators, including those for most databases, has changed the game. There are battle-proven operators that handle most of the pain points. However, there is one critical issue those operators cannot solve: <strong>IOPS</strong>.</p>
+<p>You can increase the computing power of a database as much as you like, but if the IOPS are low, the database performance will suffer. Ultimately, you have to retrieve data from a disk, which significantly hampers query performance. In this short article, I intend to outline my benchmarks for different storage options.</p>
+<h2 id="kubernetes-on-hetzner-storage-options">Kubernetes on Hetzner storage options</h2>
+<p>There are two main types of storage options available on the Hetzner Cloud:</p>
+<ul>
+<li>
+<p>Instance volume storage: This is the NVMe storage linked to the node you rent. This volume scales only with the number of CPU and Memory you choose, making it quite costly.</p>
+</li>
+<li>
+<p>Cloud volume storage: This is a block storage volume that is relatively inexpensive but offers lower performance.</p>
+</li>
+</ul>
+<p>The difference in IOPS is significant. For a medium-sized instance, the read IOPS on a local volume are 17 times higher than on cloud storage. You can find a detailed benchmark of IOPS performance for all instance types here: <a href="https://pcr.cloud-mercato.com/providers/hetzner/flavors/ccx21/performance/iops">https://pcr.cloud-mercato.com/providers/hetzner/flavors/ccx21/performance/iops</a></p>
+<p><img src="/images/v1714233526187-5716b5f5-9137-47bf-a811-dd466cab4870.png" alt=""></p>
+<p>In Hetzner’s Kubernetes solution, there are three built-in storage classes that can be used out of the box:</p>
+<ul>
+<li>
+<p><strong>hcloud-volumes</strong>: This is a block storage drive, the slower option.</p>
+</li>
+<li>
+<p><strong>longhorn-volumes</strong>: Longhorn is an open-source, distributed block storage system. It can optionally utilize the local drive of each node.</p>
+</li>
+<li>
+<p><strong>local-file</strong>: This is Rancher’s implementation that simplifies the use of local host files as a volume.</p>
+</li>
+</ul>
+<p>Using local files in Kubernetes has several drawbacks and should generally be avoided. These files are inherently tied to specific hosts, complicating adaptation to changes in node architecture. This approach also introduces security vulnerabilities and significantly increases maintenance complexity.</p>
+<p>Longhorn can be enabled during cluster installation using Terraform, and it aims to make use of local volumes. To achieve this, you must configure Longhorn as described here: <a href="https://gist.github.com/ifeulner/d311b2868f6c00e649f33a72166c2e5b">https://gist.github.com/ifeulner/d311b2868f6c00e649f33a72166c2e5b</a></p>
+<p>In summary: You need to enable the default disk on nodes first via settings.</p>
+<pre class="astro-code astro-code-themes github-light github-dark" style="background-color:#fff;--shiki-dark-bg:#24292e;color:#24292e;--shiki-dark:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="yaml"><code><span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">defaultSettings</span><span style="color:#24292E;--shiki-dark:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">  createDefaultDiskLabeledNodes</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#005CC5;--shiki-dark:#79B8FF">true</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">  kubernetesClusterAutoscalerEnabled</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#005CC5;--shiki-dark:#79B8FF">true</span><span style="color:#6A737D;--shiki-dark:#6A737D"> # if autoscaler is active in the cluster</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">  defaultDataPath</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">/var/lib/longhorn</span></span>
+<span class="line"><span style="color:#6A737D;--shiki-dark:#6A737D">  # ensure pod is moved to an healthy node if current node is down:</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">  node-down-pod-deletion-policy</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">delete-both-statefulset-and-deployment-pod</span></span></code></pre>
+<p>Label the nodes and assign a portion of the drive to a disk type “nvme”:</p>
+<pre class="astro-code astro-code-themes github-light github-dark" style="background-color:#fff;--shiki-dark-bg:#24292e;color:#24292e;--shiki-dark:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="yaml"><code><span class="line"><span style="color:#032F62;--shiki-dark:#9ECBFF">kubectl label node &#x3C;node> node.longhorn.io/create-default-disk='config'</span></span>
+<span class="line"><span style="color:#032F62;--shiki-dark:#9ECBFF">kubectl annotate node &#x3C;storagenode> node.longhorn.io/default-disks-config='[ { "path":"/var/lib/longhorn","allowScheduling":true, "storageReserved":21474836240, "tags":[ "nvme" ]}, { "name":"hcloud-volume", "path":"/var/longhorn","allowScheduling":true, "storageReserved":10737418120,"tags":[ "ssd" ] }]'</span></span></code></pre>
+<p>Now you can define a longhorn storage clas0 that will utilize the nvme disk like this:</p>
+<pre class="astro-code astro-code-themes github-light github-dark" style="background-color:#fff;--shiki-dark-bg:#24292e;color:#24292e;--shiki-dark:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="yaml"><code><span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">kind</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">StorageClass</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">apiVersion</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">storage.k8s.io/v1</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">metadata</span><span style="color:#24292E;--shiki-dark:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">  name</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">longhorn-fast</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">provisioner</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">driver.longhorn.io</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">allowVolumeExpansion</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#005CC5;--shiki-dark:#79B8FF">true</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">reclaimPolicy</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">Delete</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">volumeBindingMode</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">Immediate</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">parameters</span><span style="color:#24292E;--shiki-dark:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">  numberOfReplicas</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">"3"</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">  staleReplicaTimeout</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">"2880"</span><span style="color:#6A737D;--shiki-dark:#6A737D"> # 48 hours in minutes</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">  fromBackup</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">""</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">  fsType</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">"ext4"</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">  diskSelector</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">"nvme"</span></span></code></pre>
+<p>Ok, we are ready to go. Lets benchmark!</p>
+<h2 id="benchmark-storage-iops-for-a-given-storage-class-in-kubernetes">Benchmark storage IOPS for a given storage class in Kubernetes.</h2>
+<p>We need a simple solution to benchmark a given storage class. I used <a href="https://github.com/storageos/dbench">dbbench</a>’s docker container to spin up a simple benchmark job in kubernetes. First we need to define some sample PVCs to work with.</p>
+<pre class="astro-code astro-code-themes github-light github-dark" style="background-color:#fff;--shiki-dark-bg:#24292e;color:#24292e;--shiki-dark:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="yaml"><code><span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">kind</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">PersistentVolumeClaim</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">apiVersion</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">v1</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">metadata</span><span style="color:#24292E;--shiki-dark:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">  name</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">dbench-pv-claim-localpath</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">spec</span><span style="color:#24292E;--shiki-dark:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">  storageClassName</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">local-path</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">  accessModes</span><span style="color:#24292E;--shiki-dark:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    - </span><span style="color:#032F62;--shiki-dark:#9ECBFF">ReadWriteOnce</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">  resources</span><span style="color:#24292E;--shiki-dark:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">    requests</span><span style="color:#24292E;--shiki-dark:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">      storage</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">10Gi</span></span>
+<span class="line"><span style="color:#6F42C1;--shiki-dark:#B392F0">---</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">kind</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">PersistentVolumeClaim</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">apiVersion</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">v1</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">metadata</span><span style="color:#24292E;--shiki-dark:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">  name</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">dbench-pv-claim-longhorn</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">spec</span><span style="color:#24292E;--shiki-dark:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">  storageClassName</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">longhorn-fast</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">  accessModes</span><span style="color:#24292E;--shiki-dark:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    - </span><span style="color:#032F62;--shiki-dark:#9ECBFF">ReadWriteOnce</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">  resources</span><span style="color:#24292E;--shiki-dark:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">    requests</span><span style="color:#24292E;--shiki-dark:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">      storage</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">25Gi</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6F42C1;--shiki-dark:#B392F0">---</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> </span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">kind</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">PersistentVolumeClaim</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">apiVersion</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">v1</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">metadata</span><span style="color:#24292E;--shiki-dark:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">  name</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">dbench-pv-claim-hcloud</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">spec</span><span style="color:#24292E;--shiki-dark:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">  storageClassName</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">hcloud-volumes</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">  accessModes</span><span style="color:#24292E;--shiki-dark:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    - </span><span style="color:#032F62;--shiki-dark:#9ECBFF">ReadWriteOnce</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">  resources</span><span style="color:#24292E;--shiki-dark:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">    requests</span><span style="color:#24292E;--shiki-dark:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">      storage</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">25Gi</span></span></code></pre>
+<p>We utilize kubernetes jobs to run the individual benchmark.</p>
+<pre class="astro-code astro-code-themes github-light github-dark" style="background-color:#fff;--shiki-dark-bg:#24292e;color:#24292e;--shiki-dark:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="yaml"><code><span class="line"><span style="color:#6F42C1;--shiki-dark:#B392F0">---</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">apiVersion</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">batch/v1</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">kind</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">Job</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">metadata</span><span style="color:#24292E;--shiki-dark:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">  name</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">db-bench-01</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">spec</span><span style="color:#24292E;--shiki-dark:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">  template</span><span style="color:#24292E;--shiki-dark:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">    spec</span><span style="color:#24292E;--shiki-dark:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">      containers</span><span style="color:#24292E;--shiki-dark:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">      - </span><span style="color:#22863A;--shiki-dark:#85E89D">name</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">dbench</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">        image</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">storageos/dbench:latest</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">        env</span><span style="color:#24292E;--shiki-dark:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">          - </span><span style="color:#22863A;--shiki-dark:#85E89D">name</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">DBENCH_MOUNTPOINT</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">            value</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">/data</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">        volumeMounts</span><span style="color:#24292E;--shiki-dark:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">        - </span><span style="color:#22863A;--shiki-dark:#85E89D">name</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">dbench-pv</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">          mountPath</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">/data</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">      restartPolicy</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">Never</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">      volumes</span><span style="color:#24292E;--shiki-dark:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">      - </span><span style="color:#22863A;--shiki-dark:#85E89D">name</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">dbench-pv</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">        persistentVolumeClaim</span><span style="color:#24292E;--shiki-dark:#E1E4E8">:</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">          claimName</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">dbench-pv-claim-longhorn</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> </span></span>
+<span class="line"><span style="color:#6A737D;--shiki-dark:#6A737D">          #claimName: dbench-pv-claim-hcloud </span></span>
+<span class="line"><span style="color:#6A737D;--shiki-dark:#6A737D">          #claimName: dbench-pv-claim-localpath</span></span></code></pre>
+<p>A typical benchmark result will look like this:</p>
+<pre class="astro-code astro-code-themes github-light github-dark" style="background-color:#fff;--shiki-dark-bg:#24292e;color:#24292e;--shiki-dark:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="yaml"><code><span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">Random Read/Write IOPS</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#22863A;--shiki-dark:#85E89D">32.7k/27.1k. BW</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">2854MiB/s / 2140MiB/s</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">Average Latency (usec) Read/Write</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">325.47/216.90</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">Sequential Read/Write</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">5741MiB/s / 4689MiB/s</span></span>
+<span class="line"><span style="color:#22863A;--shiki-dark:#85E89D">Mixed Random Read/Write IOPS</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: </span><span style="color:#032F62;--shiki-dark:#9ECBFF">23.8k/7946</span></span></code></pre>
+<p>I ran benchmarks for all storage options and got a rather disappointing result. Longhorn adds some overhead, causing a 4.5x slowdown compared to a raw local file, and only slightly outperforms a cloud volume.</p>
+<p><img src="/images/v1714235081058-086ffb2d-5a43-4614-b12e-3869ae4a5208.png" alt=""></p>
+<p>I’m not sure if there are optimizations available for Longhorn. I halted my evaluation here; it appears that using a local file on the host node might be the best choice for a database workload.</p>
+<p>In my upcoming post, I will share my experience of running a database workload on Hetzner in production using local files.</p> <hr data-astro-cid-yvbahnfj> <p class="meta" data-astro-cid-yvbahnfj>
+Questions or corrections? <a href="mailto:sven.eliasson@gmail.com" data-astro-cid-yvbahnfj>Mail me</a> —
+      or find me on <a href="https://github.com/comino" data-astro-cid-yvbahnfj>GitHub</a>.
+</p> </article>   </main> <footer class="site"> <div class="wrap"> <span>© 2026 Sven Eliasson</span> <span> <a href="https://github.com/comino">github</a> ·
+<a href="mailto:sven.eliasson@gmail.com">email</a> ·
+<a href="/rss.xml">rss</a> </span> </div> </footer> </body></html>
