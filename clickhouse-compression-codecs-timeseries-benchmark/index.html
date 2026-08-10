@@ -1,27 +1,26 @@
 <!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>ClickHouse Compression Codecs for Time-Series Data: A Benchmark</title><meta name="description" content="Five ClickHouse codec configurations benchmarked on 100M rows of time-series data: storage, query latency and ingest throughput, with a decision tree for codec selection."><link rel="canonical" href="https://sveneliasson.de/clickhouse-compression-codecs-timeseries-benchmark/"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><meta property="og:title" content="ClickHouse Compression Codecs for Time-Series Data: A Benchmark"><meta property="og:description" content="Five ClickHouse codec configurations benchmarked on 100M rows of time-series data: storage, query latency and ingest throughput, with a decision tree for codec selection."><meta property="og:type" content="article"><meta property="og:url" content="https://sveneliasson.de/clickhouse-compression-codecs-timeseries-benchmark/"><meta property="og:image" content="https://sveneliasson.de/images/exp01-storage-overview.png"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="https://sveneliasson.de/images/exp01-storage-overview.png"><link rel="alternate" type="application/rss+xml" title="Sven Eliasson" href="/rss.xml"><link rel="sitemap" href="/sitemap-index.xml"><link rel="stylesheet" href="/_astro/_slug_.RFOjj78o.css">
 <style>.post-header[data-astro-cid-yvbahnfj]{margin-bottom:2rem}.back[data-astro-cid-yvbahnfj]{margin-right:.5rem}.cover[data-astro-cid-yvbahnfj]{display:block;width:100%;aspect-ratio:2 / 1;object-fit:cover;margin:0 0 2.2rem}
-</style></head> <body> <header class="site"> <div class="wrap"> <a href="/" class="brand"><span class="prompt">~$</span> sven.eliasson</a> <nav> <a href="/">writing</a> <a href="/about/">about</a> <a href="/rss.xml">rss</a> </nav> </div> </header> <main class="wrap">  <article data-astro-cid-yvbahnfj> <header class="post-header" data-astro-cid-yvbahnfj> <p class="meta" data-astro-cid-yvbahnfj> <a href="/" class="back" data-astro-cid-yvbahnfj>←</a> 24 Feb 2026 · 24 min read
-</p> <h1 data-astro-cid-yvbahnfj>ClickHouse Compression Codecs for Time-Series Data: A Benchmark</h1> <ul class="chips" aria-label="Tags" data-astro-cid-yvbahnfj> <li class="chip" data-astro-cid-yvbahnfj>clickhouse</li><li class="chip" data-astro-cid-yvbahnfj>compression</li><li class="chip" data-astro-cid-yvbahnfj>time-series</li><li class="chip" data-astro-cid-yvbahnfj>benchmark</li> </ul> </header> <img class="cover" src="/images/exp01-storage-overview.png" alt="" loading="eager" data-astro-cid-yvbahnfj> <h2 id="abstract">Abstract</h2>
-<p>We benchmark five compression codec configurations on 100 million rows of synthetic time-series data in ClickHouse 25.11. The configurations range from default LZ4 to per-column specialized codecs (DoubleDelta, Delta, Gorilla) with ZSTD(3) and ZSTD(9) as general-purpose compressors. We measure storage (via <code>system.parts_columns</code>), query latency (10 queries × 10 runs, cold and warm, median ± IQR), and ingest throughput (3 batch sizes × 10 runs). Key findings: (1) Per-column codecs with ZSTD(3) achieve 4.23× overall compression vs 1.67× for default LZ4, driven by 872× on sorted timestamps and 843× on monotone counters. (2) Raising ZSTD from level 3 to 9 adds no measurable compression benefit but reduces ingest throughput by 28% at 1M-row batches (37% below default LZ4). (3) Better compression does not consistently improve query speed: V4 wins on well-compressed columns (counter aggregation: 819 ms vs 905 ms) but loses on poorly-compressed ones (value scans: 480 ms vs 401 ms). (4) Gorilla codec expands noisy float data and should only be used on smooth, slowly-changing values. We provide a decision tree for codec selection and discuss limitations of our synthetic, single-part, fits-in-RAM setup.</p>
+</style></head> <body> <header class="site"> <div class="wrap"> <a href="/" class="brand"><span class="prompt">~$</span> sven.eliasson</a> <nav> <a href="/">writing</a> <a href="/about/">about</a> <a href="/rss.xml">rss</a> </nav> </div> </header> <main class="wrap">  <article data-astro-cid-yvbahnfj> <header class="post-header" data-astro-cid-yvbahnfj> <p class="meta" data-astro-cid-yvbahnfj> <a href="/" class="back" data-astro-cid-yvbahnfj>←</a> 24 Feb 2026 · 13 min read
+</p> <h1 data-astro-cid-yvbahnfj>ClickHouse Compression Codecs for Time-Series Data: A Benchmark</h1> <ul class="chips" aria-label="Tags" data-astro-cid-yvbahnfj> <li class="chip" data-astro-cid-yvbahnfj>clickhouse</li><li class="chip" data-astro-cid-yvbahnfj>compression</li><li class="chip" data-astro-cid-yvbahnfj>time-series</li><li class="chip" data-astro-cid-yvbahnfj>benchmark</li> </ul> </header> <img class="cover" src="/images/exp01-storage-overview.png" alt="" loading="eager" data-astro-cid-yvbahnfj> <p>I benchmarked five compression codec setups on 100 million rows of synthetic time-series data in ClickHouse 25.11, from plain default LZ4 to per-column codecs (DoubleDelta, Delta, Gorilla) combined with ZSTD. I measured three things: storage size, query latency (cold and warm), and ingest speed.</p>
+<p>The short version:</p>
+<ol>
+<li><strong>Per-column codecs + ZSTD(3) compress 4.23×, default LZ4 only 1.67×.</strong> Almost all of that comes from two columns: sorted timestamps (872×) and monotone counters (843×).</li>
+<li><strong>ZSTD(9) is not worth it.</strong> Same compression as ZSTD(3), but 28% slower ingest.</li>
+<li><strong>Better compression does not mean faster queries.</strong> Heavily compressed columns query faster cold, but ZSTD costs CPU on every read, so plain LZ4 often wins warm.</li>
+<li><strong>Gorilla can make float data <em>bigger</em>.</strong> It only helps on smooth, slowly-changing values.</li>
+</ol>
+<p>All data, scripts and plots are in <a href="https://github.com/comino/blog-experiments/tree/main/01">comino/blog-experiments</a>. Numbers below are median ± IQR over 10 runs.</p>
 <h2 id="setup">Setup</h2>
 <ul>
-<li><strong>Server:</strong> Hetzner CX53 with 16 vCPU (AMD EPYC), 32 GB RAM, 320 GB NVMe SSD</li>
-<li><strong>ClickHouse:</strong> 25.11.3.54</li>
+<li><strong>Server:</strong> Hetzner CX53 with 16 vCPU (AMD EPYC), 32 GB RAM, NVMe SSD</li>
+<li><strong>ClickHouse:</strong> 25.11.3.54, default settings</li>
 <li><strong>Dataset:</strong> 100M rows × 6 columns, simulating Prometheus-style metrics</li>
-<li><strong>Runs:</strong> 10 per query per variant. We report <strong>median ± IQR</strong> (interquartile range).</li>
-<li><strong>Cold runs:</strong> Between each cold measurement, all caches were dropped:
-<pre class="astro-code astro-code-themes github-light github-dark" style="background-color:#fff;--shiki-dark-bg:#24292e;color:#24292e;--shiki-dark:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="bash"><code><span class="line"><span style="color:#6F42C1;--shiki-dark:#B392F0">clickhouse-client</span><span style="color:#005CC5;--shiki-dark:#79B8FF"> -q</span><span style="color:#032F62;--shiki-dark:#9ECBFF"> "SYSTEM DROP FILESYSTEM CACHE"</span></span>
-<span class="line"><span style="color:#6F42C1;--shiki-dark:#B392F0">clickhouse-client</span><span style="color:#005CC5;--shiki-dark:#79B8FF"> -q</span><span style="color:#032F62;--shiki-dark:#9ECBFF"> "SYSTEM DROP MARK CACHE"</span></span>
-<span class="line"><span style="color:#6F42C1;--shiki-dark:#B392F0">clickhouse-client</span><span style="color:#005CC5;--shiki-dark:#79B8FF"> -q</span><span style="color:#032F62;--shiki-dark:#9ECBFF"> "SYSTEM DROP UNCOMPRESSED CACHE"</span></span>
-<span class="line"><span style="color:#6F42C1;--shiki-dark:#B392F0">sync</span><span style="color:#24292E;--shiki-dark:#E1E4E8">; </span><span style="color:#005CC5;--shiki-dark:#79B8FF">echo</span><span style="color:#005CC5;--shiki-dark:#79B8FF"> 3</span><span style="color:#D73A49;--shiki-dark:#F97583"> ></span><span style="color:#032F62;--shiki-dark:#9ECBFF"> /proc/sys/vm/drop_caches</span></span></code></pre>
-</li>
-<li><strong>Warm runs:</strong> One warmup query (same SQL, result discarded) to populate OS page cache and ClickHouse mark cache, then 10 measured runs without cache drops. All runs execute sequentially via <code>clickhouse-client --time --format=Null</code>. The warmup ensures data is in the OS page cache; subsequent runs predominantly measure decompression CPU + query processing, with minimal I/O (page faults and FS metadata may still contribute). Note: “predominantly CPU-bound” means decompression is the largest measured contributor, not that I/O is zero. Thread scheduling, memory allocation, and other factors still contribute.</li>
-<li><strong>Query order:</strong> Fixed (Q1–Q10 per variant), not randomized. Given the per-query cache drops for cold runs, ordering effects are minimal. Warm runs use the same fixed order after a single warmup pass. A limitation: warm-run ordering could introduce systematic bias from cache residency of previous queries. We did not test randomized order; see Limitations.</li>
-<li><strong>“Uncompressed”</strong> throughout this article refers to <code>data_uncompressed_bytes</code> from <code>system.parts_columns</code>. This is ClickHouse’s internal uncompressed column data size. It excludes mark files (<code>marks_bytes</code>), primary key index, and other metadata.</li>
-<li><strong>Cold/warm caveat:</strong> The entire dataset (543 MB compressed for V4, 1.37 GB for V1) fits within the 32 GB server RAM. “Cold” means we dropped all ClickHouse and OS caches, but the OS can re-cache data from NVMe during a query. True I/O-bound behavior would require a dataset exceeding available memory. Our cold measurements primarily show the <em>overhead of re-reading from NVMe + decompression</em>, not sustained random I/O. In a production system where data exceeds RAM, compression’s I/O reduction would matter more: V4’s 543 MB requires ~2.5× fewer disk reads than V1’s 1.37 GB. Our results underestimate this advantage.</li>
+<li><strong>Cold runs:</strong> all ClickHouse and OS caches dropped before each measurement</li>
+<li><strong>Warm runs:</strong> one warmup query first, then 10 measured runs</li>
 </ul>
+<p>One caveat up front: the whole dataset fits in RAM (543 MB to 1.37 GB depending on codec). So my “cold” numbers show NVMe re-read plus decompression, not the sustained disk I/O you would see when data is much bigger than memory. More on that below.</p>
 <h3 id="data-generation">Data Generation</h3>
-<p>The dataset contains 100M rows generated with ClickHouse’s <code>numbers()</code> table function:</p>
+<p>The 100M rows come from ClickHouse’s <code>numbers()</code> function:</p>
 <pre class="astro-code astro-code-themes github-light github-dark" style="background-color:#fff;--shiki-dark-bg:#24292e;color:#24292e;--shiki-dark:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="sql"><code><span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">INSERT INTO</span><span style="color:#005CC5;--shiki-dark:#79B8FF"> exp01_compression</span><span style="color:#24292E;--shiki-dark:#E1E4E8">.</span><span style="color:#005CC5;--shiki-dark:#79B8FF">source</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">SELECT</span></span>
 <span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    toDateTime(</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'2024-01-01 00:00:00'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">) </span><span style="color:#D73A49;--shiki-dark:#F97583">+</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> intDiv(</span><span style="color:#D73A49;--shiki-dark:#F97583">number</span><span style="color:#24292E;--shiki-dark:#E1E4E8">, </span><span style="color:#005CC5;--shiki-dark:#79B8FF">50</span><span style="color:#24292E;--shiki-dark:#E1E4E8">) </span><span style="color:#D73A49;--shiki-dark:#F97583">AS</span><span style="color:#D73A49;--shiki-dark:#F97583"> timestamp</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span></span>
@@ -32,19 +31,16 @@
 <span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    ['us-east','us-west','eu-central','ap-south'][1 + (rand(number + 1) % 4)] </span><span style="color:#D73A49;--shiki-dark:#F97583">AS</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> region,</span></span>
 <span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    intDiv(</span><span style="color:#D73A49;--shiki-dark:#F97583">number</span><span style="color:#24292E;--shiki-dark:#E1E4E8">, </span><span style="color:#005CC5;--shiki-dark:#79B8FF">50</span><span style="color:#24292E;--shiki-dark:#E1E4E8">) </span><span style="color:#D73A49;--shiki-dark:#F97583">AS</span><span style="color:#D73A49;--shiki-dark:#F97583"> counter</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">FROM</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> numbers(</span><span style="color:#005CC5;--shiki-dark:#79B8FF">100000000</span><span style="color:#24292E;--shiki-dark:#E1E4E8">);</span></span></code></pre>
-<p>This produces:</p>
+<p>That gives me:</p>
 <ul>
-<li><strong>5 distinct <code>metric_name</code></strong> values (<code>LowCardinality(String)</code>)</li>
-<li><strong>50 distinct <code>host</code></strong> values (<code>LowCardinality(String)</code>)</li>
-<li><strong>4 distinct <code>region</code></strong> values (<code>LowCardinality(String)</code>)</li>
-<li><strong><code>timestamp</code>:</strong> <code>DateTime</code>, 1-second intervals (50 rows/second across 5 metrics × 10 hosts × …), spanning 2024-01-01 to 2024-04-25 (~115 days)</li>
-<li><strong><code>counter</code>:</strong> <code>UInt64</code>, monotonically increasing (shared across all series at same timestamp)</li>
-<li><strong><code>value</code>:</strong> <code>Float64</code>, <code>sin(t) + uniform_noise(0, 0.5)</code>, simulating a noisy gauge</li>
+<li><code>timestamp</code>: strict 1-second intervals, ~115 days of data</li>
+<li><code>counter</code>: strictly increasing UInt64</li>
+<li><code>value</code>: a sine wave plus noise, like a noisy gauge metric</li>
+<li><code>metric_name</code>, <code>host</code>, <code>region</code>: LowCardinality strings (5, 50 and 4 distinct values)</li>
 </ul>
-<p>All tables use <code>ORDER BY (metric_name, host, timestamp)</code> and default <code>index_granularity = 8192</code>. After INSERT, <code>OPTIMIZE TABLE … FINAL</code> merged each table into a single part.</p>
-<p><strong>Data regularity check:</strong> <code>timestamp</code> intervals are strictly 1-second within each <code>(metric_name, host)</code> group (verified: <code>SELECT max(diff) FROM (SELECT timestamp - lag(timestamp) OVER (...) AS diff ...)</code> = 1 second). <code>counter</code> is strictly monotone (no violations). These ideal conditions produce the extreme compression ratios reported below. Real data with variable intervals or out-of-order inserts will compress less.</p>
-<p>The full generator script is in <a href="https://github.com/comino/blog-experiments/tree/main/01/scripts"><code>01/scripts/generate_data.sql</code></a>.</p>
-<h3 id="codec-variants-ddl">Codec Variants (DDL)</h3>
+<p>All tables use <code>ORDER BY (metric_name, host, timestamp)</code>. After insert, <code>OPTIMIZE TABLE … FINAL</code> merged everything into a single part.</p>
+<p>This data is <em>ideal</em> for compression: perfectly regular timestamps, perfectly monotone counters. Real data is messier and will compress less. Keep that in mind for every ratio below.</p>
+<h3 id="the-five-variants">The Five Variants</h3>
 <pre class="astro-code astro-code-themes github-light github-dark" style="background-color:#fff;--shiki-dark-bg:#24292e;color:#24292e;--shiki-dark:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="sql"><code><span class="line"><span style="color:#6A737D;--shiki-dark:#6A737D">-- V1: Default (LZ4)</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">CREATE</span><span style="color:#D73A49;--shiki-dark:#F97583"> TABLE</span><span style="color:#6F42C1;--shiki-dark:#B392F0"> v1_default</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> (</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">    timestamp</span><span style="color:#D73A49;--shiki-dark:#F97583"> DateTime</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span></span>
@@ -71,7 +67,7 @@
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">CREATE</span><span style="color:#D73A49;--shiki-dark:#F97583"> TABLE</span><span style="color:#6F42C1;--shiki-dark:#B392F0"> v3_percolumn</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> (</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">    timestamp</span><span style="color:#D73A49;--shiki-dark:#F97583"> DateTime</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> CODEC(DoubleDelta, LZ4),</span></span>
 <span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    metric_name LowCardinality(String) CODEC(LZ4),</span></span>
-<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">    value</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> Float64 CODEC(Gorilla(</span><span style="color:#005CC5;--shiki-dark:#79B8FF">8</span><span style="color:#24292E;--shiki-dark:#E1E4E8">), LZ4),  </span><span style="color:#6A737D;--shiki-dark:#6A737D">-- Gorilla(8): 8 = sizeof(Float64)</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">    value</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> Float64 CODEC(Gorilla(</span><span style="color:#005CC5;--shiki-dark:#79B8FF">8</span><span style="color:#24292E;--shiki-dark:#E1E4E8">), LZ4),</span></span>
 <span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    host LowCardinality(String) CODEC(LZ4),</span></span>
 <span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    region LowCardinality(String) CODEC(LZ4),</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">    counter</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> UInt64 CODEC(Delta(</span><span style="color:#005CC5;--shiki-dark:#79B8FF">8</span><span style="color:#24292E;--shiki-dark:#E1E4E8">), LZ4)</span></span>
@@ -89,35 +85,19 @@
 <span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">) ENGINE </span><span style="color:#D73A49;--shiki-dark:#F97583">=</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> MergeTree()</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">ORDER BY</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> (metric_name, host, </span><span style="color:#D73A49;--shiki-dark:#F97583">timestamp</span><span style="color:#24292E;--shiki-dark:#E1E4E8">);</span></span>
 <span class="line"></span>
-<span class="line"><span style="color:#6A737D;--shiki-dark:#6A737D">-- V5: Aggressive: same pre-codecs as V4, ZSTD(9) on most columns</span></span>
+<span class="line"><span style="color:#6A737D;--shiki-dark:#6A737D">-- V5: Same as V4, but ZSTD(9) on most columns</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">CREATE</span><span style="color:#D73A49;--shiki-dark:#F97583"> TABLE</span><span style="color:#6F42C1;--shiki-dark:#B392F0"> v5_aggressive</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> (</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">    timestamp</span><span style="color:#D73A49;--shiki-dark:#F97583"> DateTime</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> CODEC(DoubleDelta, ZSTD(</span><span style="color:#005CC5;--shiki-dark:#79B8FF">9</span><span style="color:#24292E;--shiki-dark:#E1E4E8">)),</span></span>
 <span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    metric_name LowCardinality(String) CODEC(ZSTD(</span><span style="color:#005CC5;--shiki-dark:#79B8FF">9</span><span style="color:#24292E;--shiki-dark:#E1E4E8">)),</span></span>
-<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">    value</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> Float64 CODEC(Gorilla(</span><span style="color:#005CC5;--shiki-dark:#79B8FF">8</span><span style="color:#24292E;--shiki-dark:#E1E4E8">), ZSTD(</span><span style="color:#005CC5;--shiki-dark:#79B8FF">3</span><span style="color:#24292E;--shiki-dark:#E1E4E8">)),  </span><span style="color:#6A737D;--shiki-dark:#6A737D">-- ZSTD(3), not (9): see note</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">    value</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> Float64 CODEC(Gorilla(</span><span style="color:#005CC5;--shiki-dark:#79B8FF">8</span><span style="color:#24292E;--shiki-dark:#E1E4E8">), ZSTD(</span><span style="color:#005CC5;--shiki-dark:#79B8FF">3</span><span style="color:#24292E;--shiki-dark:#E1E4E8">)),</span></span>
 <span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    host LowCardinality(String) CODEC(ZSTD(</span><span style="color:#005CC5;--shiki-dark:#79B8FF">9</span><span style="color:#24292E;--shiki-dark:#E1E4E8">)),</span></span>
 <span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    region LowCardinality(String) CODEC(ZSTD(</span><span style="color:#005CC5;--shiki-dark:#79B8FF">9</span><span style="color:#24292E;--shiki-dark:#E1E4E8">)),</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">    counter</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> UInt64 CODEC(Delta(</span><span style="color:#005CC5;--shiki-dark:#79B8FF">8</span><span style="color:#24292E;--shiki-dark:#E1E4E8">), ZSTD(</span><span style="color:#005CC5;--shiki-dark:#79B8FF">9</span><span style="color:#24292E;--shiki-dark:#E1E4E8">))</span></span>
 <span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">) ENGINE </span><span style="color:#D73A49;--shiki-dark:#F97583">=</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> MergeTree()</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">ORDER BY</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> (metric_name, host, </span><span style="color:#D73A49;--shiki-dark:#F97583">timestamp</span><span style="color:#24292E;--shiki-dark:#E1E4E8">);</span></span></code></pre>
-<p><strong>Notes on codec choices:</strong></p>
-<ul>
-<li><code>Gorilla(8)</code>: The parameter specifies the data type width in bytes. For <code>Float64</code> = 8 bytes. This tells the Gorilla encoder to XOR consecutive 8-byte values, matching the native Float64 representation.</li>
-<li>V3 uses per-column specialized codecs with LZ4 as the general-purpose back-end: <code>DoubleDelta+LZ4</code> on timestamps, <code>Gorilla(8)+LZ4</code> on value, <code>Delta(8)+LZ4</code> on counter, plain <code>LZ4</code> on LowCardinality strings. V4 replaces LZ4 with ZSTD(3) throughout.</li>
-<li>V5 uses <code>ZSTD(9)</code> on most columns, but <code>value</code> uses <code>ZSTD(3)</code>: the actual DDL on the server. ZSTD(9) on Gorilla-encoded noisy floats provides no benefit over ZSTD(3); ClickHouse applies the specified level, but the incompressible XOR residuals give the higher level nothing to work with. The V4≈V5 storage result (141 KB difference on 543 MB) confirms this.</li>
-</ul>
-<h2 id="results-storage">Results: Storage</h2>
-<h3 id="measuring-compression">Measuring Compression</h3>
-<p>We query <code>system.parts_columns</code> on each table (single merged part after <code>OPTIMIZE FINAL</code>):</p>
-<pre class="astro-code astro-code-themes github-light github-dark" style="background-color:#fff;--shiki-dark-bg:#24292e;color:#24292e;--shiki-dark:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="sql"><code><span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">SELECT</span></span>
-<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">    table</span><span style="color:#24292E;--shiki-dark:#E1E4E8">, column,</span></span>
-<span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    data_compressed_bytes, data_uncompressed_bytes,</span></span>
-<span class="line"><span style="color:#005CC5;--shiki-dark:#79B8FF">    round</span><span style="color:#24292E;--shiki-dark:#E1E4E8">(data_uncompressed_bytes </span><span style="color:#D73A49;--shiki-dark:#F97583">/</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> data_compressed_bytes, </span><span style="color:#005CC5;--shiki-dark:#79B8FF">2</span><span style="color:#24292E;--shiki-dark:#E1E4E8">) </span><span style="color:#D73A49;--shiki-dark:#F97583">AS</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> ratio,</span></span>
-<span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    marks_bytes, </span><span style="color:#D73A49;--shiki-dark:#F97583">rows</span></span>
-<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">FROM</span><span style="color:#005CC5;--shiki-dark:#79B8FF"> system</span><span style="color:#24292E;--shiki-dark:#E1E4E8">.</span><span style="color:#005CC5;--shiki-dark:#79B8FF">parts_columns</span></span>
-<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">WHERE</span><span style="color:#D73A49;--shiki-dark:#F97583"> database</span><span style="color:#D73A49;--shiki-dark:#F97583"> =</span><span style="color:#032F62;--shiki-dark:#9ECBFF"> 'exp01_compression'</span><span style="color:#D73A49;--shiki-dark:#F97583"> AND</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> active </span><span style="color:#D73A49;--shiki-dark:#F97583">=</span><span style="color:#005CC5;--shiki-dark:#79B8FF"> 1</span></span>
-<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">ORDER BY</span><span style="color:#D73A49;--shiki-dark:#F97583"> table</span><span style="color:#24292E;--shiki-dark:#E1E4E8">, column;</span></span></code></pre>
-<p><em>Full output: <a href="https://github.com/comino/blog-experiments/tree/main/01/data"><code>01/data/v3/system_parts_columns_audit.csv</code></a>, 30 rows, all 5 variants × 6 columns.</em></p>
-<h3 id="total-size">Total Size</h3>
+<p>The <code>(8)</code> in <code>Gorilla(8)</code> and <code>Delta(8)</code> is the value width in bytes (Float64/UInt64 = 8). In V5, <code>value</code> stays on ZSTD(3): the Gorilla output of noisy floats is basically incompressible, so a higher ZSTD level has nothing to work with.</p>
+<h2 id="storage">Storage</h2>
+<p>Sizes come from <code>system.parts_columns</code> (column data only, one merged part per table):</p>
 
 
 
@@ -159,16 +139,15 @@
 
 
 
+<table><thead><tr><th>Variant</th><th align="right">Compressed</th><th align="right">Uncompressed</th><th align="right">Ratio</th></tr></thead><tbody><tr><td>V1 (LZ4 default)</td><td align="right">1,374.5 MB</td><td align="right">2,300.9 MB</td><td align="right">1.67×</td></tr><tr><td>V2 (ZSTD all)</td><td align="right">864.7 MB</td><td align="right">2,301.1 MB</td><td align="right">2.66×</td></tr><tr><td>V3 (per-col + LZ4)</td><td align="right">673.6 MB</td><td align="right">2,301.1 MB</td><td align="right">3.42×</td></tr><tr><td>V4 (per-col + ZSTD)</td><td align="right">543.4 MB</td><td align="right">2,301.1 MB</td><td align="right">4.23×</td></tr><tr><td>V5 (aggressive)</td><td align="right">543.4 MB</td><td align="right">2,301.1 MB</td><td align="right">4.23×</td></tr></tbody></table>
+<p>V4 and V5 differ by 141 KB on 543 MB. The specialized pre-codecs do the heavy lifting; raising ZSTD from level 3 to 9 buys nothing here.</p>
+<p>Where the difference comes from, per column:</p>
 
 
 
 
 
 
-<table><thead><tr><th>Variant</th><th align="right">Compressed</th><th align="right">Uncompressed</th><th align="right">Ratio</th><th align="right">Marks</th></tr></thead><tbody><tr><td>V1 (LZ4 default)</td><td align="right">1,374.5 MB</td><td align="right">2,300.9 MB</td><td align="right">1.67×</td><td align="right">130 KB</td></tr><tr><td>V2 (ZSTD all)</td><td align="right">864.7 MB</td><td align="right">2,301.1 MB</td><td align="right">2.66×</td><td align="right">121 KB</td></tr><tr><td>V3 (per-col + LZ4)</td><td align="right">673.6 MB</td><td align="right">2,301.1 MB</td><td align="right">3.42×</td><td align="right">111 KB</td></tr><tr><td>V4 (per-col + ZSTD)</td><td align="right">543.4 MB</td><td align="right">2,301.1 MB</td><td align="right">4.23×</td><td align="right">100 KB</td></tr><tr><td>V5 (aggressive)</td><td align="right">543.4 MB</td><td align="right">2,301.1 MB</td><td align="right">4.23×</td><td align="right">100 KB</td></tr></tbody></table>
-<p><em>Source: <code>sum(data_compressed_bytes)</code> and <code>sum(data_uncompressed_bytes)</code> from <code>system.parts_columns</code>. These totals are the per-column data only. <code>marks_bytes</code> (mark files for granule offsets) add ~100–130 KB, negligible at this scale. <code>bytes_on_disk</code> from <code>system.parts</code> includes marks, primary key index, checksums, and metadata, adding roughly 25 MB overhead on top of the column data sum. All ratios in this article use column data only.</em></p>
-<p>V4 and V5 differ by only 141 KB on 543 MB. The specialized pre-codecs (DoubleDelta, Delta) do the heavy lifting; raising ZSTD from level 3 to 9 adds no measurable benefit on this dataset.</p>
-<h3 id="per-column-breakdown-v1-vs-v3-vs-v4">Per-Column Breakdown (V1 vs V3 vs V4)</h3>
 
 
 
@@ -238,23 +217,17 @@
 
 
 
+<table><thead><tr><th>Column</th><th>Type</th><th align="right">V1</th><th align="right">V3</th><th align="right">V4</th><th align="right">V1 Ratio</th><th align="right">V3 Ratio</th><th align="right">V4 Ratio</th></tr></thead><tbody><tr><td>timestamp</td><td>DateTime</td><td align="right">401.7 MB</td><td align="right">477 KB</td><td align="right">459 KB</td><td align="right">1.00×</td><td align="right">839×</td><td align="right">872×</td></tr><tr><td>counter</td><td>UInt64</td><td align="right">420.1 MB</td><td align="right">977 KB</td><td align="right">949 KB</td><td align="right">1.90×</td><td align="right">818×</td><td align="right">843×</td></tr><tr><td>value</td><td>Float64</td><td align="right">551.2 MB</td><td align="right">634.5 MB</td><td align="right">541.7 MB</td><td align="right">1.45×</td><td align="right">1.26×</td><td align="right">1.48×</td></tr><tr><td>metric_name</td><td>LC(String)</td><td align="right">482 KB</td><td align="right">470 KB</td><td align="right">111 KB</td><td align="right">208×</td><td align="right">213×</td><td align="right">908×</td></tr><tr><td>host</td><td>LC(String)</td><td align="right">484 KB</td><td align="right">471 KB</td><td align="right">112 KB</td><td align="right">207×</td><td align="right">213×</td><td align="right">898×</td></tr><tr><td>region</td><td>LC(String)</td><td align="right">486 KB</td><td align="right">473 KB</td><td align="right">116 KB</td><td align="right">206×</td><td align="right">212×</td><td align="right">867×</td></tr></tbody></table>
+<p><strong>Why 872× on timestamps?</strong> The data is sorted, so within each <code>(metric_name, host)</code> group the timestamps step by exactly 1 second. DoubleDelta turns that into near-constant zeros, and ZSTD squeezes those to almost nothing. Plain LZ4 without a pre-codec gets 1.0×: it simply cannot see the pattern. Same story for the counter column with Delta.</p>
+<p><strong>Why does <code>value</code> barely compress?</strong> It’s a sine wave plus random noise. Noise has no pattern to exploit. Worse: V3 (Gorilla+LZ4) lands at 1.26×, <em>below</em> plain LZ4’s 1.45×. Gorilla’s XOR encoding actually expanded the noisy data.</p>
+<h3 id="when-gorilla-helps">When Gorilla Helps</h3>
+<p>Gorilla XORs each value with the previous one and stores only the changed bits. Nearly-identical neighbors compress great; noisy neighbors change all the bits and add overhead. I tested four distributions on 10M-row tables:</p>
 
 
 
 
 
 
-<table><thead><tr><th>Column</th><th>Type</th><th align="right">V1 Compressed</th><th align="right">V3 Compressed</th><th align="right">V4 Compressed</th><th align="right">V1 Ratio</th><th align="right">V3 Ratio</th><th align="right">V4 Ratio</th></tr></thead><tbody><tr><td>timestamp</td><td>DateTime</td><td align="right">401.7 MB</td><td align="right">477 KB</td><td align="right">459 KB</td><td align="right">1.00×</td><td align="right">839×</td><td align="right">872×</td></tr><tr><td>counter</td><td>UInt64</td><td align="right">420.1 MB</td><td align="right">977 KB</td><td align="right">949 KB</td><td align="right">1.90×</td><td align="right">818×</td><td align="right">843×</td></tr><tr><td>value</td><td>Float64</td><td align="right">551.2 MB</td><td align="right">634.5 MB</td><td align="right">541.7 MB</td><td align="right">1.45×</td><td align="right">1.26×</td><td align="right">1.48×</td></tr><tr><td>metric_name</td><td>LC(String)</td><td align="right">482 KB</td><td align="right">470 KB</td><td align="right">111 KB</td><td align="right">208×</td><td align="right">213×</td><td align="right">908×</td></tr><tr><td>host</td><td>LC(String)</td><td align="right">484 KB</td><td align="right">471 KB</td><td align="right">112 KB</td><td align="right">207×</td><td align="right">213×</td><td align="right">898×</td></tr><tr><td>region</td><td>LC(String)</td><td align="right">486 KB</td><td align="right">473 KB</td><td align="right">116 KB</td><td align="right">206×</td><td align="right">212×</td><td align="right">867×</td></tr></tbody></table>
-<p><em>Source: <code>system_parts_columns_audit.csv</code>, exact byte values.</em></p>
-<p><strong>Why 872× on timestamps?</strong> The data is sorted by <code>(metric_name, host, timestamp)</code>. Within each <code>(metric_name, host)</code> group, timestamps are strictly sequential at 1-second intervals (2M consecutive timestamps per group). <code>DoubleDelta</code> on such data produces constant-zero second derivatives. <code>ZSTD(3)</code> then compresses the near-zero residuals to almost nothing.</p>
-<p>This is the best case for DoubleDelta. Real timestamps with variable intervals, out-of-order inserts, or different sort keys will compress much less.</p>
-<p>V1’s timestamp column (plain LZ4, no pre-codec) achieves only 1.0× because LZ4 cannot exploit the sequential structure without Delta/DoubleDelta pre-processing.</p>
-<p><strong>Why 843× on counters?</strong> Same principle. <code>counter</code> increases monotonically. <code>Delta(8)</code> produces small, regular residuals that ZSTD compresses efficiently.</p>
-<p><strong>Why <code>value</code> barely compresses?</strong> The column contains <code>sin(t) + uniform_noise</code>. The noise prevents both LZ4 and Gorilla from finding patterns. V4 (Gorilla+ZSTD) achieves 1.48×, marginally better than V1’s 1.45×. Critically, V3 (Gorilla+LZ4) achieves only <strong>1.26×</strong>, <em>worse</em> than V1’s plain LZ4. Gorilla’s XOR overhead expands the data, and LZ4 can’t recover it. ZSTD partially compensates in V4, but the improvement is negligible. See the Gorilla deep-dive below.</p>
-<p><strong>V3 codec detail:</strong> V3 applies per-column codecs as shown in the DDL above: <code>DoubleDelta+LZ4</code> on timestamp (839×), <code>Gorilla(8)+LZ4</code> on value (1.26×), <code>Delta(8)+LZ4</code> on counter (818×), and plain <code>LZ4</code> on the three LowCardinality string columns (212–213×). The dramatic ratios on timestamp and counter come from the pre-codecs (DoubleDelta, Delta) reducing regular patterns to near-zero residuals; even LZ4 compresses those efficiently. The difference between V3 and V4 is almost entirely in ZSTD’s superior handling of the residuals that LZ4 leaves on the table.</p>
-<h3 id="gorilla-deep-dive-xor-encoding-and-when-it-helps">Gorilla Deep-Dive: XOR Encoding and When It Helps</h3>
-<p>Gorilla (Pelkonen et al., VLDB 2015) compresses floating-point values using XOR-based delta encoding. For each value, it XORs with the previous value and encodes only the differing bits. When consecutive values are similar (small XOR delta), only a few bits change, leading to excellent compression. When values change unpredictably (large XOR delta), nearly all 64 bits differ, and Gorilla adds encoding overhead <em>on top</em> of the raw data.</p>
-<p>To isolate the effect, we tested four value distributions on separate 10M-row tables, comparing V1 (LZ4 default) vs V3 (Gorilla+LZ4) on the <code>value</code> column:</p>
 
 
 
@@ -284,78 +257,63 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-<table><thead><tr><th>Distribution</th><th>Description</th><th align="right">V1 LZ4 Ratio</th><th align="right">V3 Gorilla+LZ4 Ratio</th><th align="center">Gorilla Benefit</th></tr></thead><tbody><tr><td>Monotone</td><td><code>f(t) = t × 0.001</code></td><td align="right">1.74×</td><td align="right">44.7×</td><td align="center"><strong>25.7× better</strong></td></tr><tr><td>Spiky</td><td>99% zeros, 1% random spikes</td><td align="right">1.62×</td><td align="right">30.8×</td><td align="center"><strong>19.0× better</strong></td></tr><tr><td>Sinus + noise</td><td><code>sin(t/1000) + uniform_noise</code></td><td align="right">1.31×</td><td align="right">2.48×</td><td align="center">1.9× better</td></tr><tr><td>Random</td><td><code>rand()</code> uniform Float64</td><td align="right">1.05×</td><td align="right">1.29×</td><td align="center">1.2× better</td></tr></tbody></table>
-<p><em>Source: <code>system.parts_columns</code> on <code>dist_{name}_v1</code> and <code>dist_{name}_v3</code> tables, <code>value</code> column only. 10M rows each, sorted by timestamp, single part after OPTIMIZE FINAL.</em></p>
+<table><thead><tr><th>Distribution</th><th>Description</th><th align="right">LZ4 Ratio</th><th align="right">Gorilla+LZ4 Ratio</th></tr></thead><tbody><tr><td>Monotone</td><td><code>f(t) = t × 0.001</code></td><td align="right">1.74×</td><td align="right"><strong>44.7×</strong></td></tr><tr><td>Spiky</td><td>99% zeros, 1% spikes</td><td align="right">1.62×</td><td align="right"><strong>30.8×</strong></td></tr><tr><td>Sinus + noise</td><td>smooth + noise</td><td align="right">1.31×</td><td align="right">2.48×</td></tr><tr><td>Random</td><td>uniform random</td><td align="right">1.05×</td><td align="right">1.29×</td></tr></tbody></table>
 <p><img src="/images/exp01-gorilla-distributions.png" alt="Gorilla compression by data distribution"></p>
-<p><strong>Key insight:</strong> Gorilla excels when consecutive stored values are nearly identical (monotone, mostly-zero). On smoothly drifting data, it helps moderately. On fully random data, the benefit is marginal. On the main benchmark’s noisy gauge data, Gorilla actually <em>hurts</em> in V3 (1.26×) because the LZ4 back-end handles the Gorilla-expanded data less efficiently than raw float data.</p>
-<p>In V4 (Gorilla+ZSTD), the value column achieves 1.48×, slightly better than V1’s 1.45×, because ZSTD can partially recover from Gorilla’s expansion. But the improvement is negligible.</p>
-<p><strong>When to use Gorilla:</strong></p>
+<p>Rule of thumb:</p>
 <ul>
-<li>✅ Battery levels, slowly-drifting temperatures, monotone counters as floats</li>
-<li>✅ Sparse data with many repeated values (e.g., 99% zeros)</li>
-<li>❌ Noisy gauge metrics (CPU%, latency, throughput)</li>
-<li>❌ Random or uniformly distributed values</li>
+<li>✅ Slowly drifting values: battery levels, temperatures, counters stored as floats</li>
+<li>✅ Sparse data that is mostly zeros</li>
+<li>❌ Noisy gauges: CPU%, latency, throughput</li>
+<li>❌ Random values</li>
 </ul>
-<h2 id="results-query-performance">Results: Query Performance</h2>
-<h3 id="benchmark-queries">Benchmark Queries</h3>
-<p>We run 10 queries covering different access patterns: point lookups, range scans, aggregations, percentiles, distinct counts, argMax, and window functions.</p>
-<pre class="astro-code astro-code-themes github-light github-dark" style="background-color:#fff;--shiki-dark-bg:#24292e;color:#24292e;--shiki-dark:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="sql"><code><span class="line"><span style="color:#6A737D;--shiki-dark:#6A737D">-- Q1: Point lookup (1 host, 1 hour): tests primary key selectivity</span></span>
+<h2 id="query-performance">Query Performance</h2>
+<p>I ran 10 queries covering common access patterns:</p>
+<pre class="astro-code astro-code-themes github-light github-dark" style="background-color:#fff;--shiki-dark-bg:#24292e;color:#24292e;--shiki-dark:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="sql"><code><span class="line"><span style="color:#6A737D;--shiki-dark:#6A737D">-- Q1: Point lookup (1 host, 1 hour)</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">SELECT</span><span style="color:#005CC5;--shiki-dark:#79B8FF"> avg</span><span style="color:#24292E;--shiki-dark:#E1E4E8">(</span><span style="color:#D73A49;--shiki-dark:#F97583">value</span><span style="color:#24292E;--shiki-dark:#E1E4E8">) </span><span style="color:#D73A49;--shiki-dark:#F97583">FROM</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> {</span><span style="color:#D73A49;--shiki-dark:#F97583">table</span><span style="color:#24292E;--shiki-dark:#E1E4E8">}</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">WHERE</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> metric_name</span><span style="color:#D73A49;--shiki-dark:#F97583">=</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'cpu_usage'</span><span style="color:#D73A49;--shiki-dark:#F97583"> AND</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> host</span><span style="color:#D73A49;--shiki-dark:#F97583">=</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'host-0'</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">  AND</span><span style="color:#D73A49;--shiki-dark:#F97583"> timestamp</span><span style="color:#D73A49;--shiki-dark:#F97583"> BETWEEN</span><span style="color:#032F62;--shiki-dark:#9ECBFF"> '2024-01-01 00:00:00'</span><span style="color:#D73A49;--shiki-dark:#F97583"> AND</span><span style="color:#032F62;--shiki-dark:#9ECBFF"> '2024-01-01 01:00:00'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">;</span></span>
 <span class="line"></span>
-<span class="line"><span style="color:#6A737D;--shiki-dark:#6A737D">-- Q2: Range scan (1 metric, 7 days): medium selectivity</span></span>
+<span class="line"><span style="color:#6A737D;--shiki-dark:#6A737D">-- Q2: Range scan (1 metric, 7 days)</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">SELECT</span><span style="color:#005CC5;--shiki-dark:#79B8FF"> avg</span><span style="color:#24292E;--shiki-dark:#E1E4E8">(</span><span style="color:#D73A49;--shiki-dark:#F97583">value</span><span style="color:#24292E;--shiki-dark:#E1E4E8">) </span><span style="color:#D73A49;--shiki-dark:#F97583">FROM</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> {</span><span style="color:#D73A49;--shiki-dark:#F97583">table</span><span style="color:#24292E;--shiki-dark:#E1E4E8">}</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">WHERE</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> metric_name</span><span style="color:#D73A49;--shiki-dark:#F97583">=</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'cpu_usage'</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">  AND</span><span style="color:#D73A49;--shiki-dark:#F97583"> timestamp</span><span style="color:#D73A49;--shiki-dark:#F97583"> BETWEEN</span><span style="color:#032F62;--shiki-dark:#9ECBFF"> '2024-01-01'</span><span style="color:#D73A49;--shiki-dark:#F97583"> AND</span><span style="color:#032F62;--shiki-dark:#9ECBFF"> '2024-01-08'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">;</span></span>
 <span class="line"></span>
-<span class="line"><span style="color:#6A737D;--shiki-dark:#6A737D">-- Q3: Top-K GROUP BY host: aggregation with grouping</span></span>
+<span class="line"><span style="color:#6A737D;--shiki-dark:#6A737D">-- Q3: Top-K GROUP BY host</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">SELECT</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> host, </span><span style="color:#005CC5;--shiki-dark:#79B8FF">count</span><span style="color:#24292E;--shiki-dark:#E1E4E8">(), </span><span style="color:#005CC5;--shiki-dark:#79B8FF">avg</span><span style="color:#24292E;--shiki-dark:#E1E4E8">(</span><span style="color:#D73A49;--shiki-dark:#F97583">value</span><span style="color:#24292E;--shiki-dark:#E1E4E8">) </span><span style="color:#D73A49;--shiki-dark:#F97583">FROM</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> {</span><span style="color:#D73A49;--shiki-dark:#F97583">table</span><span style="color:#24292E;--shiki-dark:#E1E4E8">}</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">WHERE</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> metric_name</span><span style="color:#D73A49;--shiki-dark:#F97583">=</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'cpu_usage'</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">GROUP BY</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> host </span><span style="color:#D73A49;--shiki-dark:#F97583">ORDER BY</span><span style="color:#005CC5;--shiki-dark:#79B8FF"> count</span><span style="color:#24292E;--shiki-dark:#E1E4E8">() </span><span style="color:#D73A49;--shiki-dark:#F97583">DESC</span><span style="color:#D73A49;--shiki-dark:#F97583"> LIMIT</span><span style="color:#005CC5;--shiki-dark:#79B8FF"> 10</span><span style="color:#24292E;--shiki-dark:#E1E4E8">;</span></span>
 <span class="line"></span>
-<span class="line"><span style="color:#6A737D;--shiki-dark:#6A737D">-- Q4: Point lookup (1 host, 1 hour, multi-agg): minimal data</span></span>
+<span class="line"><span style="color:#6A737D;--shiki-dark:#6A737D">-- Q4: Point lookup (1 host, 1 hour, multi-agg)</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">SELECT</span><span style="color:#005CC5;--shiki-dark:#79B8FF"> avg</span><span style="color:#24292E;--shiki-dark:#E1E4E8">(</span><span style="color:#D73A49;--shiki-dark:#F97583">value</span><span style="color:#24292E;--shiki-dark:#E1E4E8">), </span><span style="color:#005CC5;--shiki-dark:#79B8FF">min</span><span style="color:#24292E;--shiki-dark:#E1E4E8">(</span><span style="color:#D73A49;--shiki-dark:#F97583">value</span><span style="color:#24292E;--shiki-dark:#E1E4E8">), </span><span style="color:#005CC5;--shiki-dark:#79B8FF">max</span><span style="color:#24292E;--shiki-dark:#E1E4E8">(</span><span style="color:#D73A49;--shiki-dark:#F97583">value</span><span style="color:#24292E;--shiki-dark:#E1E4E8">) </span><span style="color:#D73A49;--shiki-dark:#F97583">FROM</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> {</span><span style="color:#D73A49;--shiki-dark:#F97583">table</span><span style="color:#24292E;--shiki-dark:#E1E4E8">}</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">WHERE</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> metric_name</span><span style="color:#D73A49;--shiki-dark:#F97583">=</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'cpu_usage'</span><span style="color:#D73A49;--shiki-dark:#F97583"> AND</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> host</span><span style="color:#D73A49;--shiki-dark:#F97583">=</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'host-3'</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">  AND</span><span style="color:#D73A49;--shiki-dark:#F97583"> timestamp</span><span style="color:#D73A49;--shiki-dark:#F97583"> BETWEEN</span><span style="color:#032F62;--shiki-dark:#9ECBFF"> '2024-01-05 12:00:00'</span><span style="color:#D73A49;--shiki-dark:#F97583"> AND</span><span style="color:#032F62;--shiki-dark:#9ECBFF"> '2024-01-05 13:00:00'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">;</span></span>
 <span class="line"></span>
-<span class="line"><span style="color:#6A737D;--shiki-dark:#6A737D">-- Q5: Full table scan with WHERE: touches value column</span></span>
+<span class="line"><span style="color:#6A737D;--shiki-dark:#6A737D">-- Q5: Full table scan, touches the value column</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">SELECT</span><span style="color:#005CC5;--shiki-dark:#79B8FF"> count</span><span style="color:#24292E;--shiki-dark:#E1E4E8">() </span><span style="color:#D73A49;--shiki-dark:#F97583">FROM</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> {</span><span style="color:#D73A49;--shiki-dark:#F97583">table</span><span style="color:#24292E;--shiki-dark:#E1E4E8">} </span><span style="color:#D73A49;--shiki-dark:#F97583">WHERE</span><span style="color:#D73A49;--shiki-dark:#F97583"> value</span><span style="color:#D73A49;--shiki-dark:#F97583"> ></span><span style="color:#005CC5;--shiki-dark:#79B8FF"> 60</span><span style="color:#24292E;--shiki-dark:#E1E4E8">;</span></span>
 <span class="line"></span>
-<span class="line"><span style="color:#6A737D;--shiki-dark:#6A737D">-- Q6: Multi-column aggregation: heavy, reads all columns</span></span>
+<span class="line"><span style="color:#6A737D;--shiki-dark:#6A737D">-- Q6: Heavy aggregation, reads all columns</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">SELECT</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> metric_name, host, </span><span style="color:#005CC5;--shiki-dark:#79B8FF">avg</span><span style="color:#24292E;--shiki-dark:#E1E4E8">(</span><span style="color:#D73A49;--shiki-dark:#F97583">value</span><span style="color:#24292E;--shiki-dark:#E1E4E8">), </span><span style="color:#005CC5;--shiki-dark:#79B8FF">sum</span><span style="color:#24292E;--shiki-dark:#E1E4E8">(</span><span style="color:#D73A49;--shiki-dark:#F97583">counter</span><span style="color:#24292E;--shiki-dark:#E1E4E8">) </span><span style="color:#D73A49;--shiki-dark:#F97583">FROM</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> {</span><span style="color:#D73A49;--shiki-dark:#F97583">table</span><span style="color:#24292E;--shiki-dark:#E1E4E8">}</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">GROUP BY</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> metric_name, host </span><span style="color:#D73A49;--shiki-dark:#F97583">ORDER BY</span><span style="color:#005CC5;--shiki-dark:#79B8FF"> avg</span><span style="color:#24292E;--shiki-dark:#E1E4E8">(</span><span style="color:#D73A49;--shiki-dark:#F97583">value</span><span style="color:#24292E;--shiki-dark:#E1E4E8">) </span><span style="color:#D73A49;--shiki-dark:#F97583">DESC</span><span style="color:#D73A49;--shiki-dark:#F97583"> LIMIT</span><span style="color:#005CC5;--shiki-dark:#79B8FF"> 20</span><span style="color:#24292E;--shiki-dark:#E1E4E8">;</span></span>
 <span class="line"></span>
-<span class="line"><span style="color:#6A737D;--shiki-dark:#6A737D">-- Q7: Percentile: quantile on value column</span></span>
+<span class="line"><span style="color:#6A737D;--shiki-dark:#6A737D">-- Q7: p99 percentile on value</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">SELECT</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> metric_name, quantile(</span><span style="color:#005CC5;--shiki-dark:#79B8FF">0</span><span style="color:#24292E;--shiki-dark:#E1E4E8">.</span><span style="color:#005CC5;--shiki-dark:#79B8FF">99</span><span style="color:#24292E;--shiki-dark:#E1E4E8">)(</span><span style="color:#D73A49;--shiki-dark:#F97583">value</span><span style="color:#24292E;--shiki-dark:#E1E4E8">) </span><span style="color:#D73A49;--shiki-dark:#F97583">AS</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> p99 </span><span style="color:#D73A49;--shiki-dark:#F97583">FROM</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> {</span><span style="color:#D73A49;--shiki-dark:#F97583">table</span><span style="color:#24292E;--shiki-dark:#E1E4E8">}</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">GROUP BY</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> metric_name;</span></span>
 <span class="line"></span>
-<span class="line"><span style="color:#6A737D;--shiki-dark:#6A737D">-- Q8: Distinct count: uniqExact on string columns</span></span>
+<span class="line"><span style="color:#6A737D;--shiki-dark:#6A737D">-- Q8: Distinct counts on string columns</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">SELECT</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> uniqExact(metric_name), uniqExact(host) </span><span style="color:#D73A49;--shiki-dark:#F97583">FROM</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> {</span><span style="color:#D73A49;--shiki-dark:#F97583">table</span><span style="color:#24292E;--shiki-dark:#E1E4E8">};</span></span>
 <span class="line"></span>
-<span class="line"><span style="color:#6A737D;--shiki-dark:#6A737D">-- Q9: Last value per host: argMax pattern</span></span>
+<span class="line"><span style="color:#6A737D;--shiki-dark:#6A737D">-- Q9: Last value per host (argMax)</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">SELECT</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> host, argMax(</span><span style="color:#D73A49;--shiki-dark:#F97583">value</span><span style="color:#24292E;--shiki-dark:#E1E4E8">, </span><span style="color:#D73A49;--shiki-dark:#F97583">timestamp</span><span style="color:#24292E;--shiki-dark:#E1E4E8">) </span><span style="color:#D73A49;--shiki-dark:#F97583">AS</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> last_value </span><span style="color:#D73A49;--shiki-dark:#F97583">FROM</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> {</span><span style="color:#D73A49;--shiki-dark:#F97583">table</span><span style="color:#24292E;--shiki-dark:#E1E4E8">}</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">WHERE</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> metric_name</span><span style="color:#D73A49;--shiki-dark:#F97583">=</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'cpu_usage'</span><span style="color:#D73A49;--shiki-dark:#F97583"> GROUP BY</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> host;</span></span>
 <span class="line"></span>
-<span class="line"><span style="color:#6A737D;--shiki-dark:#6A737D">-- Q10: Window function: moving average</span></span>
+<span class="line"><span style="color:#6A737D;--shiki-dark:#6A737D">-- Q10: Moving average (window function)</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">SELECT</span><span style="color:#D73A49;--shiki-dark:#F97583"> timestamp</span><span style="color:#24292E;--shiki-dark:#E1E4E8">, </span><span style="color:#005CC5;--shiki-dark:#79B8FF">avg</span><span style="color:#24292E;--shiki-dark:#E1E4E8">(</span><span style="color:#D73A49;--shiki-dark:#F97583">value</span><span style="color:#24292E;--shiki-dark:#E1E4E8">) </span><span style="color:#D73A49;--shiki-dark:#F97583">OVER</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> (</span><span style="color:#D73A49;--shiki-dark:#F97583">ORDER BY</span><span style="color:#D73A49;--shiki-dark:#F97583"> timestamp</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">  ROWS</span><span style="color:#D73A49;--shiki-dark:#F97583"> BETWEEN</span><span style="color:#005CC5;--shiki-dark:#79B8FF"> 59</span><span style="color:#D73A49;--shiki-dark:#F97583"> PRECEDING</span><span style="color:#D73A49;--shiki-dark:#F97583"> AND</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> CURRENT </span><span style="color:#D73A49;--shiki-dark:#F97583">ROW</span><span style="color:#24292E;--shiki-dark:#E1E4E8">) </span><span style="color:#D73A49;--shiki-dark:#F97583">AS</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> ma60</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">FROM</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> {</span><span style="color:#D73A49;--shiki-dark:#F97583">table</span><span style="color:#24292E;--shiki-dark:#E1E4E8">}</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">WHERE</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> metric_name</span><span style="color:#D73A49;--shiki-dark:#F97583">=</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'cpu_usage'</span><span style="color:#D73A49;--shiki-dark:#F97583"> AND</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> host</span><span style="color:#D73A49;--shiki-dark:#F97583">=</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'host-0'</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">  AND</span><span style="color:#D73A49;--shiki-dark:#F97583"> timestamp</span><span style="color:#D73A49;--shiki-dark:#F97583"> BETWEEN</span><span style="color:#032F62;--shiki-dark:#9ECBFF"> '2024-01-01'</span><span style="color:#D73A49;--shiki-dark:#F97583"> AND</span><span style="color:#032F62;--shiki-dark:#9ECBFF"> '2024-01-02'</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">ORDER BY</span><span style="color:#D73A49;--shiki-dark:#F97583"> timestamp</span><span style="color:#24292E;--shiki-dark:#E1E4E8">;</span></span></code></pre>
-<h3 id="latency-matrix-cold-median--iqr-ms-n10">Latency Matrix: Cold (median ± IQR, ms, n=10)</h3>
+<h3 id="cold-median--iqr-ms-n10">Cold (median ± IQR, ms, n=10)</h3>
 
 
 
@@ -461,7 +419,7 @@
 
 
 <table><thead><tr><th>Query</th><th>Pattern</th><th align="right">V1 LZ4</th><th align="right">V2 ZSTD</th><th align="right">V3 per-col+LZ4</th><th align="right">V4 per-col+ZSTD</th><th align="right">V5 aggressive</th></tr></thead><tbody><tr><td>Q01</td><td>Point lookup</td><td align="right">16 ± 1</td><td align="right">16 ± 1</td><td align="right">16 ± 0</td><td align="right">16 ± 2</td><td align="right">16 ± 2</td></tr><tr><td>Q02</td><td>Range 7d</td><td align="right">29 ± 3</td><td align="right">28 ± 2</td><td align="right">26 ± 1</td><td align="right">25 ± 1</td><td align="right">25 ± 2</td></tr><tr><td>Q03</td><td>Top-K hosts</td><td align="right">130 ± 14</td><td align="right">131 ± 6</td><td align="right">146 ± 3</td><td align="right">141 ± 12</td><td align="right">140 ± 10</td></tr><tr><td>Q04</td><td>Point lookup</td><td align="right">4 ± 1</td><td align="right">4 ± 1</td><td align="right">4 ± 1</td><td align="right">4 ± 0</td><td align="right">4 ± 1</td></tr><tr><td>Q05</td><td>Full scan WHERE</td><td align="right">229 ± 4</td><td align="right">230 ± 16</td><td align="right">252 ± 11</td><td align="right">243 ± 12</td><td align="right">234 ± 13</td></tr><tr><td>Q06</td><td>Multi-col agg</td><td align="right"><strong>905 ± 37</strong></td><td align="right"><strong>783 ± 18</strong></td><td align="right">888 ± 23</td><td align="right"><strong>819 ± 9</strong></td><td align="right"><strong>807 ± 33</strong></td></tr><tr><td>Q07</td><td>Percentile p99</td><td align="right"><strong>401 ± 42</strong></td><td align="right">365 ± 10</td><td align="right">488 ± 21</td><td align="right">480 ± 28</td><td align="right">477 ± 11</td></tr><tr><td>Q08</td><td>Distinct count</td><td align="right">373 ± 17</td><td align="right">375 ± 24</td><td align="right">372 ± 20</td><td align="right">365 ± 21</td><td align="right">362 ± 26</td></tr><tr><td>Q09</td><td>argMax</td><td align="right">179 ± 5</td><td align="right">169 ± 5</td><td align="right"><strong>141 ± 7</strong></td><td align="right"><strong>146 ± 7</strong></td><td align="right"><strong>146 ± 7</strong></td></tr><tr><td>Q10</td><td>Window func</td><td align="right">18 ± 1</td><td align="right">19 ± 1</td><td align="right">19 ± 2</td><td align="right">18 ± 1</td><td align="right">20 ± 1</td></tr></tbody></table>
-<h3 id="latency-matrix-warm-median--iqr-ms-n10">Latency Matrix: Warm (median ± IQR, ms, n=10)</h3>
+<h3 id="warm-median--iqr-ms-n10">Warm (median ± IQR, ms, n=10)</h3>
 
 
 
@@ -567,75 +525,17 @@
 
 
 <table><thead><tr><th>Query</th><th>Pattern</th><th align="right">V1 LZ4</th><th align="right">V2 ZSTD</th><th align="right">V3 per-col+LZ4</th><th align="right">V4 per-col+ZSTD</th><th align="right">V5 aggressive</th></tr></thead><tbody><tr><td>Q01</td><td>Point lookup</td><td align="right">5 ± 0</td><td align="right">5 ± 0</td><td align="right">5 ± 1</td><td align="right">5 ± 1</td><td align="right">5 ± 1</td></tr><tr><td>Q02</td><td>Range 7d</td><td align="right"><strong>9 ± 0</strong></td><td align="right">11 ± 0</td><td align="right">11 ± 1</td><td align="right">12 ± 0</td><td align="right">12 ± 1</td></tr><tr><td>Q03</td><td>Top-K hosts</td><td align="right"><strong>25 ± 0</strong></td><td align="right">42 ± 1</td><td align="right">50 ± 1</td><td align="right">66 ± 2</td><td align="right">67 ± 6</td></tr><tr><td>Q04</td><td>Point lookup</td><td align="right">4 ± 1</td><td align="right">4 ± 0</td><td align="right">4 ± 0</td><td align="right">4 ± 0</td><td align="right">4 ± 0</td></tr><tr><td>Q05</td><td>Full scan WHERE</td><td align="right"><strong>16 ± 0</strong></td><td align="right">44 ± 3</td><td align="right">60 ± 4</td><td align="right">86 ± 5</td><td align="right">90 ± 4</td></tr><tr><td>Q06</td><td>Multi-col agg</td><td align="right"><strong>544 ± 43</strong></td><td align="right">620 ± 37</td><td align="right">726 ± 37</td><td align="right">639 ± 31</td><td align="right">637 ± 34</td></tr><tr><td>Q07</td><td>Percentile p99</td><td align="right"><strong>116 ± 5</strong></td><td align="right">189 ± 19</td><td align="right">221 ± 8</td><td align="right">272 ± 12</td><td align="right">285 ± 13</td></tr><tr><td>Q08</td><td>Distinct count</td><td align="right">375 ± 28</td><td align="right">362 ± 24</td><td align="right">352 ± 21</td><td align="right">358 ± 32</td><td align="right">377 ± 29</td></tr><tr><td>Q09</td><td>argMax</td><td align="right"><strong>30 ± 2</strong></td><td align="right">51 ± 2</td><td align="right">57 ± 2</td><td align="right">72 ± 5</td><td align="right">69 ± 7</td></tr><tr><td>Q10</td><td>Window func</td><td align="right">6 ± 1</td><td align="right">7 ± 0</td><td align="right">7 ± 0</td><td align="right">7 ± 0</td><td align="right">7 ± 1</td></tr></tbody></table>
-<p><em>Source: <a href="https://github.com/comino/blog-experiments/tree/main/01/data"><code>01/data/v4/benchmark.csv</code></a>, 1,000 measurements (10 queries × 5 variants × 10 runs × 2 cache states).</em></p>
 <p><img src="/images/exp01-latency-heatmap-cold-warm.png" alt="Query latency heatmap: cold vs warm"></p>
-<h3 id="analysis">Analysis</h3>
-<p><strong>Cold vs warm patterns differ by variant.</strong> V1 (LZ4) shows the largest cold→warm improvement across most queries. Example: Q05 cold 229 ms → warm 16 ms (14× speedup). V4 (ZSTD): Q05 cold 243 ms → warm 86 ms (2.8× speedup). Why? V1 reads more raw bytes from disk (1.37 GB vs 543 MB) but LZ4 decompression is nearly free, so warm queries benefit enormously from OS page cache (data already decompressed at ~memory speed). V4 reads less data but pays ZSTD decompression CPU on every query, warm or cold. The decompression cost doesn’t disappear when data is cached.</p>
-<p><strong>Point lookups (Q01, Q04, Q10): all variants identical.</strong> These queries read 1–12 granules. At this scale, codec overhead is negligible. Q04 at 4 ms reads a single granule (~8K rows).</p>
-<p><strong>Value-heavy queries (Q05, Q07): V1 wins.</strong> Q07 (quantile) reads the <code>value</code> column across all rows. V1’s LZ4 on value (551 MB, 1.45× ratio) is faster than V4’s Gorilla+ZSTD on value (542 MB, 1.48× ratio) because LZ4 decompression is ~3× cheaper than ZSTD per byte. Since both variants store nearly the same bytes for <code>value</code>, the decompression CPU dominates.</p>
-<p><strong>Counter-heavy queries (Q06): V2/V4/V5 win cold, V1 wins warm.</strong> Q06 reads both <code>value</code> and <code>counter</code>. Cold: V4 (819 ms) beats V1 (905 ms) because counter is 420 MB in V1 vs 949 KB in V4, meaning less I/O. Warm: V1 (544 ms) beats V4 (639 ms) because decompressing counter from 949 KB ZSTD is slightly more overhead than reading from cache, and value decompression cost adds up.</p>
-<p><strong>Q09 (argMax): V3/V4/V5 win cold.</strong> This query reads timestamp, value, and host columns for one metric. V3/V4/V5 benefit from the heavily compressed timestamp column (459 KB vs 402 MB in V1), which reduces I/O substantially even for cold reads.</p>
-<p><strong>Q08 (uniqExact): all variants similar.</strong> <code>uniqExact</code> on LowCardinality columns is dictionary-bound. Since all variants store LowCardinality similarly (the dictionary is tiny), performance is nearly identical.</p>
-<h3 id="profileevents-testing-whether-decompression-dominates">ProfileEvents: Testing Whether Decompression Dominates</h3>
-<p>To validate the claim that ZSTD decompression CPU dominates warm query latency, we collected <code>ProfileEvents</code> from <code>system.query_log</code> for Q05 (full table scan, warm, 5 runs each):</p>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<table><thead><tr><th>Metric</th><th align="right">V1 (LZ4)</th><th align="right">V4 (per-col+ZSTD)</th><th align="right">Ratio</th></tr></thead><tbody><tr><td>Wall clock (ms)</td><td align="right">16</td><td align="right">87</td><td align="right">5.4×</td></tr><tr><td>CPU virtual (ms, sum across threads)</td><td align="right">190</td><td align="right">1,300</td><td align="right"><strong>6.8×</strong></td></tr><tr><td>Disk read time (ms)</td><td align="right">70</td><td align="right">57</td><td align="right">0.8×</td></tr><tr><td>read_rows</td><td align="right">40M</td><td align="right">40M</td><td align="right">1.0×</td></tr><tr><td>read_bytes</td><td align="right">320 MB</td><td align="right">320 MB</td><td align="right">1.0×</td></tr></tbody></table>
-<p><em>Source: <code>system.query_log</code> ProfileEvents, median of 5 warm runs after 2 warmup queries.</em></p>
+<h3 id="what-the-numbers-say">What the numbers say</h3>
+<p><strong>Warm queries: LZ4 wins almost everywhere.</strong> Look at Q05: V1 drops from 229 ms cold to 16 ms warm. V4 only drops from 243 ms to 86 ms. Once data sits in the page cache, V1 pays almost nothing for decompression, while V4 pays the ZSTD CPU cost on every single read. That cost doesn’t go away with caching.</p>
+<p><strong>Cold queries: compression helps where it actually compressed something.</strong> Q06 reads the counter column, which is 420 MB in V1 but under 1 MB in V4. Less data to read, faster cold query (819 ms vs 905 ms). Q09 benefits the same way from the tiny timestamp column.</p>
+<p><strong>Queries on the noisy value column: LZ4 wins, cold and warm.</strong> Q07 scans <code>value</code>, which is roughly the same size in every variant. Same bytes to read, but ZSTD is about 3× more expensive to decompress than LZ4. V1: 401 ms cold. V4: 480 ms.</p>
+<p><strong>Tiny queries don’t care.</strong> Point lookups (Q01, Q04, Q10) read a few granules; all variants are identical.</p>
+<p>To check the “ZSTD costs CPU” explanation, I pulled <code>ProfileEvents</code> from <code>system.query_log</code> for warm Q05: both variants read the same 320 MB and 40M rows, disk time is nearly identical, but V4 burns <strong>6.8× more CPU</strong> than V1 (1.3s vs 0.19s summed across threads). That’s the decompression. I only profiled this one query; the pattern is plausible for the other value-heavy queries but I did not verify each one.</p>
 <p><img src="/images/exp01-profile-events-q05-warm.png" alt="ProfileEvents Q05 warm: V1 vs V4"></p>
-<p>Both variants read the same rows and bytes (ClickHouse decompresses to the same internal format). Disk read time is similar (data cached). But V4 uses <strong>6.8× more CPU</strong>, predominantly attributable to ZSTD decompression of the <code>value</code> column (541 MB, 1.48× ratio). For this query, with data in page cache, ZSTD decompression CPU is the dominant cost difference. We profiled Q05 only; the same mechanism is plausible for the other value-heavy queries but not individually verified (see Limitations).</p>
-<p><strong>Why <code>read_rows = 40M</code>, not 100M?</strong> ClickHouse automatically applies PREWHERE optimization: <code>WHERE value > 60</code> is moved to a PREWHERE clause, which uses per-granule min-max statistics to skip granules where all <code>value</code> entries are ≤ 60. The data’s sinusoidal pattern creates granules where value stays entirely below 60 (approximately 60% of all granules). With PREWHERE disabled (<code>PREWHERE 1 WHERE value > 60</code>), <code>read_rows</code> rises to 100M (all 12,208 granules). The <code>read_rows</code> metric in <code>system.query_log</code> with PREWHERE reflects rows from selected granules, not total rows scanned. Both V1 and V4 select the same granules (~4,890 of 12,208), so the comparison remains valid. Full analysis: <a href="https://github.com/comino/blog-experiments/tree/main/01/data"><code>01/data/v5/profileevents_explain.md</code></a>.</p>
-<h3 id="cold-vs-warm-what-cold-means-here">Cold vs Warm: What “Cold” Means Here</h3>
-<p>The dataset (543 MB for V4, 1.37 GB for V1) fits within the 32 GB server RAM. After dropping caches, the OS reads data from NVMe SSD, and modern NVMe can deliver several GB/s sequentially. The practical difference between “cold” and “warm” is:</p>
-<ul>
-<li><strong>Cold:</strong> NVMe read latency + decompression CPU</li>
-<li><strong>Warm:</strong> Zero I/O + decompression CPU</li>
-</ul>
-<p>For V1 (LZ4), decompression is nearly zero, so cold/warm mainly measures I/O. For V4 (ZSTD), decompression is the dominant cost regardless of cache state. This explains why V1 shows more dramatic cold→warm improvement.</p>
-<p>In a production scenario where data exceeds RAM, the I/O advantage of better compression would be more significant: V4’s 543 MB would require fewer disk reads than V1’s 1.37 GB. Our results likely underestimate the cold-query benefit of V4 in real production.</p>
-<h2 id="results-ingest-throughput">Results: Ingest Throughput</h2>
-<h3 id="ingest-methodology">Ingest Methodology</h3>
-<p>Each measurement inserts N rows from the <code>source</code> table into the target variant using <code>INSERT INTO {target} SELECT ... FROM source LIMIT {batch_size} OFFSET {offset}</code> via <code>clickhouse-client</code> (native protocol, single-threaded, <code>max_insert_threads=1</code>). Rows/s is computed as <code>batch_size / elapsed_seconds</code> where <code>elapsed_seconds</code> comes from <code>clickhouse-client --time</code>. Between runs, the target table is truncated (<code>TRUNCATE TABLE</code>). No concurrent inserts, no async inserts, no background merges were throttled. Format: native (no CSV/JSON parsing overhead). The 10 runs use non-overlapping offsets from the 100M source table to avoid caching effects.</p>
-<p>We measured INSERT performance across three batch sizes, 10 runs each:</p>
+<p>A note on “cold” here: the dataset fits in RAM and the NVMe is fast, so cold vs warm mostly measures re-read overhead, not real disk pressure. On a system where data is much bigger than RAM, V4’s 2.5× smaller footprint would matter much more than it does in my numbers. My results <em>understate</em> the cold-query benefit of good compression.</p>
+<h2 id="ingest">Ingest</h2>
+<p>Single-threaded INSERT from a source table, three batch sizes, 10 runs each (median rows/s ± IQR):</p>
 
 
 
@@ -678,18 +578,15 @@
 
 
 <table><thead><tr><th>Variant</th><th align="right">10K batch</th><th align="right">100K batch</th><th align="right">1M batch</th></tr></thead><tbody><tr><td>V1 (LZ4)</td><td align="right">147K ± 8K</td><td align="right">1,250K ± 31K</td><td align="right">5,666K ± 290K</td></tr><tr><td>V2 (ZSTD)</td><td align="right">144K ± 10K</td><td align="right">1,205K ± 148K</td><td align="right">4,651K ± 152K</td></tr><tr><td>V3 (per-col LZ4)</td><td align="right">147K ± 4K</td><td align="right">1,220K ± 98K</td><td align="right">4,808K ± 396K</td></tr><tr><td>V4 (per-col ZSTD)</td><td align="right">141K ± 23K</td><td align="right">1,198K ± 87K</td><td align="right">4,963K ± 333K</td></tr><tr><td>V5 (aggressive)</td><td align="right">137K ± 12K</td><td align="right">1,130K ± 51K</td><td align="right">3,559K ± 341K</td></tr></tbody></table>
-<p><em>Values: median rows/s ± IQR, n=10. Source: <a href="https://github.com/comino/blog-experiments/tree/main/01/data"><code>01/data/v3/ingest_extended.csv</code></a>.</em></p>
-<p>At small batch sizes (10K), all variants perform similarly (~140K rows/s): per-INSERT overhead dominates. At 1M batches:</p>
+<p><img src="/images/exp01-ingest-throughput.png" alt="Ingest throughput by batch size"></p>
+<p>At small batches, per-INSERT overhead dominates and all variants look the same. At 1M-row batches:</p>
 <ul>
-<li>V1 (LZ4): <strong>5.67M rows/s</strong>, fastest</li>
-<li>V4 (per-col ZSTD): 4.96M rows/s, 12% slower than V1</li>
-<li>V5 (ZSTD(9)): 3.56M rows/s, <strong>28% slower than V4 and 37% slower than V1</strong></li>
+<li>V1: 5.67M rows/s, fastest</li>
+<li>V4: 4.96M rows/s, 12% slower. The pre-codecs (Delta, DoubleDelta) are cheap.</li>
+<li>V5: 3.56M rows/s, 28% slower than V4 for zero compression gain. Clear lose-lose.</li>
 </ul>
-<p>V4 is only marginally slower than V1 at ingest because the pre-codec computation (Delta, DoubleDelta) is lightweight. The ZSTD(3) compression adds moderate CPU. V5’s ZSTD(9) adds significant CPU without improving compression: a clear lose-lose.</p>
-<p>Surprise: V4 is slightly <em>faster</em> than V2 and V3 at 1M batches (4.96M vs 4.65M/4.81M). This may be an artifact of run-to-run variance (the IQRs overlap), or the pre-codecs may produce data that ZSTD(3) compresses more efficiently per CPU cycle than raw data.</p>
-<h2 id="conclusion-which-compression-wins">Conclusion: Which Compression Wins?</h2>
-<p><strong>V4 (per-column specialized + ZSTD(3)) offers the best storage-first trade-off</strong> for time-series workloads in ClickHouse, when minimizing disk footprint is the primary goal. It achieves 4.23× compression (2.5× better than default LZ4) while losing only 12% ingest throughput and delivering competitive cold query latency. However, V1 (LZ4) remains faster for warm queries on value-heavy access patterns, where ZSTD decompression CPU dominates.</p>
-<h3 id="combined-overview">Combined Overview</h3>
+<h2 id="so-which-one">So Which One?</h2>
+<p>There is no single winner. Pick by workload:</p>
 
 
 
@@ -725,6 +622,8 @@
 
 
 
+<table><thead><tr><th>Your Workload</th><th align="center">Best Choice</th><th>Why</th></tr></thead><tbody><tr><td><strong>Storage-constrained</strong> (cloud, cost per GB matters)</td><td align="center"><strong>V4</strong></td><td>2.5× smaller than V1</td></tr><tr><td><strong>Cold-query-heavy</strong> (data exceeds RAM)</td><td align="center"><strong>V4</strong></td><td>Fewer disk reads beat decompression cost</td></tr><tr><td><strong>Ingest-heavy</strong> (writes matter most)</td><td align="center"><strong>V1</strong></td><td>Fastest ingest, minimal CPU</td></tr><tr><td><strong>Warm-query-heavy</strong> (dashboards, data in RAM)</td><td align="center"><strong>V1</strong></td><td>LZ4 is nearly free when cached</td></tr><tr><td><strong>Don’t want to think about codecs</strong></td><td align="center"><strong>V2</strong></td><td>One <code>ZSTD(3)</code> everywhere, 60% smaller, done</td></tr></tbody></table>
+<p>For reference, the averages across all ten queries (mean of per-query medians):</p>
 
 
 
@@ -737,9 +636,6 @@
 
 
 
-<table><thead><tr><th>Variant</th><th align="center">Comp. Ratio</th><th align="center">Avg Cold (ms)</th><th align="center">Avg Warm (ms)</th><th align="center">Ingest 1M (rows/s)</th></tr></thead><tbody><tr><td>V1 (LZ4)</td><td align="center">1.67×</td><td align="center">229</td><td align="center">113</td><td align="center">5.67M</td></tr><tr><td>V2 (ZSTD all)</td><td align="center">2.66×</td><td align="center">212</td><td align="center">134</td><td align="center">4.65M</td></tr><tr><td>V3 (per-col+LZ4)</td><td align="center">3.42×</td><td align="center">235</td><td align="center">149</td><td align="center">4.81M</td></tr><tr><td><strong>V4 (per-col+ZSTD)</strong></td><td align="center"><strong>4.23×</strong></td><td align="center">226</td><td align="center">152</td><td align="center">4.96M</td></tr><tr><td>V5 (aggressive)</td><td align="center">4.23×</td><td align="center">223</td><td align="center">156</td><td align="center">3.56M</td></tr></tbody></table>
-<p><em>Avg Cold/Warm = mean of the per-query medians across all ten queries (Q1–Q10). The cold averages sit in a narrow range (212–235 ms) because all variants process similar data volumes; the meaningful differentiators are compression ratio, warm latency, and ingest. There is no single winner: pick per workload using the matrix below.</em></p>
-<h3 id="actionable-decision-matrix">Actionable Decision Matrix</h3>
 
 
 
@@ -775,127 +671,33 @@
 
 
 
-
-
-
-
-
-<table><thead><tr><th>Your Workload</th><th align="center">Best Choice</th><th>Why</th></tr></thead><tbody><tr><td><strong>Storage-constrained</strong> (cloud, S3-backed, cost per GB matters)</td><td align="center"><strong>V4</strong></td><td>2.5× smaller than V1, V5 adds nothing</td></tr><tr><td><strong>Cold-query-heavy</strong> (data exceeds RAM, I/O-bound)</td><td align="center"><strong>V4</strong></td><td>Fewer disk reads outweigh decompression CPU</td></tr><tr><td><strong>Ingest-heavy</strong> (>1M rows/s sustained, writes matter most)</td><td align="center"><strong>V1</strong></td><td>Fastest ingest, minimal CPU overhead</td></tr><tr><td><strong>Warm-query-heavy</strong> (dashboard workload, data in RAM)</td><td align="center"><strong>V1</strong></td><td>LZ4 decompression is nearly free when cached</td></tr><tr><td><strong>Mixed read/write</strong> (general time-series)</td><td align="center"><strong>V4 or V1</strong></td><td>Depends on whether storage or warm latency matters more</td></tr><tr><td><strong>Legacy/simple</strong> (don’t want to think about codecs)</td><td align="center"><strong>V2</strong></td><td>Single <code>ZSTD(3)</code> on all columns, 60% size reduction, no column-level decisions</td></tr></tbody></table>
-<h3 id="real-world-takeaways">Real-World Takeaways</h3>
-<ol>
-<li><strong>On this dataset, ZSTD(9) was dominated by ZSTD(3).</strong> Same compression, 28% slower ingest than ZSTD(3) with the same pre-codecs. The pre-codecs do the real work.</li>
-<li><strong>Don’t apply Gorilla blindly to floats.</strong> It only helps on smooth, slowly-changing data. On noisy gauges (CPU, latency), it can make things <em>worse</em>.</li>
-<li><strong>“Better compression = faster queries” is not always true.</strong> It depends on which columns the query reads. Compression helps I/O-bound columns (timestamps, counters) but ZSTD’s decompression CPU hurts on already-small columns (noisy floats).</li>
-<li><strong>Measure on your data.</strong> Our extreme 800×+ ratios depend on perfectly regular 1-second intervals. Real Prometheus metrics with variable scrape intervals will see 10–100× on timestamps (still excellent, but not 872×).</li>
-<li><strong>Per-column codec selection is the high-value activity.</strong> The difference between V1 (1.67×) and V4 (4.23×) is not ZSTD: it’s DoubleDelta on timestamps and Delta on counters. Choose codecs per column type.</li>
-</ol>
-<h2 id="codec-decision-tree">Codec Decision Tree</h2>
+<table><thead><tr><th>Variant</th><th align="center">Ratio</th><th align="center">Avg Cold (ms)</th><th align="center">Avg Warm (ms)</th><th align="center">Ingest 1M (rows/s)</th></tr></thead><tbody><tr><td>V1</td><td align="center">1.67×</td><td align="center">229</td><td align="center">113</td><td align="center">5.67M</td></tr><tr><td>V2</td><td align="center">2.66×</td><td align="center">212</td><td align="center">134</td><td align="center">4.65M</td></tr><tr><td>V3</td><td align="center">3.42×</td><td align="center">235</td><td align="center">149</td><td align="center">4.81M</td></tr><tr><td>V4</td><td align="center">4.23×</td><td align="center">226</td><td align="center">152</td><td align="center">4.96M</td></tr><tr><td>V5</td><td align="center">4.23×</td><td align="center">223</td><td align="center">156</td><td align="center">3.56M</td></tr></tbody></table>
+<p><img src="/images/exp01-combined-overview.png" alt="Combined overview: compression × latency × ingest"></p>
+<p>And as a decision tree:</p>
 <pre class="astro-code astro-code-themes github-light github-dark" style="background-color:#fff;--shiki-dark-bg:#24292e;color:#24292e;--shiki-dark:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Is your column a sorted timestamp?</span></span>
 <span class="line"><span>  → Yes: DoubleDelta + ZSTD(3)                    [872× on sorted 1s intervals]</span></span>
 <span class="line"><span>  → No: Is it a monotone counter?</span></span>
 <span class="line"><span>    → Yes: Delta(8) + ZSTD(3)                      [843× on strictly monotone]</span></span>
 <span class="line"><span>    → No: Is it a Float?</span></span>
 <span class="line"><span>      → Smooth/slowly changing?  → Gorilla(8) + LZ4   [up to 45× on monotone floats]</span></span>
-<span class="line"><span>      → Noisy/random?           → LZ4 default         [1.45×: Gorilla hurts]</span></span>
+<span class="line"><span>      → Noisy/random?           → LZ4 default         [Gorilla hurts here]</span></span>
 <span class="line"><span>    → String/LowCardinality?    → ZSTD(3)             [867–908×]</span></span></code></pre>
-<p><img src="/images/exp01-combined-overview.png" alt="Combined overview: compression × latency × ingest"></p>
-<p><img src="/images/exp01-ingest-throughput.png" alt="Ingest throughput by batch size"></p>
-<p><strong>This is a starting point, not gospel.</strong> The ratios above are for this synthetic dataset with perfectly regular intervals and monotone counters. Real data will differ. Always measure on your own data with <code>system.parts_columns</code>.</p>
-<h2 id="limitations">Limitations</h2>
+<p>The takeaways I’d actually carry into production:</p>
 <ol>
-<li>
-<p><strong>Synthetic data.</strong> Real Prometheus metrics have different distributions (bimodal CPU, heavy-tailed latencies, quantized memory). The extreme 800–900× ratios on timestamp/counter depend on perfectly regular 1-second intervals and monotone counters. Validate on your own data.</p>
-</li>
-<li>
-<p><strong>Single sort order.</strong> DoubleDelta’s extreme ratios require timestamps sorted contiguously. A different <code>ORDER BY</code> (e.g., <code>(host, timestamp)</code> without <code>metric_name</code> prefix) would produce different results.</p>
-</li>
-<li>
-<p><strong>Single-query, single-thread benchmarks.</strong> Under concurrent load, ZSTD’s higher CPU cost during decompression may become more significant. Default <code>max_threads=16</code> was used for all queries.</p>
-</li>
-<li>
-<p><strong>Dataset fits in RAM.</strong> 100M rows produce ~543 MB (V4) to ~1.37 GB (V1) on a 32 GB server. Cold measurements still benefit from OS filesystem caching after the first NVMe read. The compression advantage would be more impactful when data exceeds available memory.</p>
-</li>
-<li>
-<p><strong>No FPC codec tested.</strong> ClickHouse’s <code>FPC</code> codec (since 22.6) is designed for floating-point compression and may outperform both Gorilla and LZ4 on noisy floats.</p>
-</li>
-<li>
-<p><strong>Single merged part.</strong> <code>OPTIMIZE FINAL</code> produces one large part, which is optimal for Delta/DoubleDelta. In production with many parts, per-part compression context is smaller and ratios may differ.</p>
-</li>
-<li>
-<p><strong>No production settings tuned.</strong> Default <code>max_threads</code>, <code>max_insert_threads</code>, no async inserts, no custom block sizes. Query results reflect out-of-the-box behavior.</p>
-</li>
-<li>
-<p><strong>Uniform noise distribution.</strong> Real gauge metrics often have Gaussian noise, bimodal distributions, or quantized values. Different noise distributions would affect Gorilla’s effectiveness differently.</p>
-</li>
-<li>
-<p><strong>Fixed query order for warm runs.</strong> Warm benchmarks use the same Q1–Q10 order without randomization. Cache residency from previous queries could introduce systematic bias. We did not test randomized order.</p>
-</li>
-<li>
-<p><strong><code>ProfileEvents</code> profiling is exemplary, not systematic.</strong> We profiled Q05 warm (V1 vs V4) via <code>system.query_log</code> to validate the decompression-CPU claim. A full profiling of all 10 queries × 5 variants would strengthen the causal interpretation for other query patterns, particularly the counter-heavy Q06 where cold and warm rankings diverge.</p>
-</li>
+<li><strong>Per-column codec choice is where the value is.</strong> V1 to V4 is 1.67× to 4.23×, and that comes from DoubleDelta and Delta, not from ZSTD.</li>
+<li><strong>Skip ZSTD(9).</strong> On this data it compressed nothing extra and cost 28% ingest.</li>
+<li><strong>Don’t put Gorilla on noisy floats.</strong> Measure first.</li>
+<li><strong>Measure on your own data.</strong> My 800×+ ratios need perfectly regular intervals. Real metrics with variable scrape intervals will land somewhere between 10× and 100× on timestamps. Still great, just not 872×.</li>
 </ol>
-<h2 id="appendix-benchmark-runner-and-settings">Appendix: Benchmark Runner and Settings</h2>
-<p><strong>Query execution order:</strong> All 10 queries were run sequentially per variant, with cache drops between each cold measurement. No randomization of query order. Warm runs used the same fixed order.</p>
-<p><strong>Relevant ClickHouse settings (default, not modified):</strong></p>
-<ul>
-<li><code>max_threads = 16</code> (matches vCPU count)</li>
-<li><code>max_read_buffer_size = 1048576</code> (1 MB)</li>
-<li><code>min_bytes_to_use_direct_io = 0</code> (disabled: all I/O through page cache)</li>
-<li><code>max_bytes_before_external_group_by = 0</code> (no spill to disk)</li>
-<li><code>use_uncompressed_cache = 0</code></li>
-<li><code>max_insert_threads = 1</code> (default for single-threaded INSERT)</li>
-</ul>
-<p><strong>ClickHouse build:</strong> <code>25.11.3.54</code>, default release build (not debug/ASan).</p>
-<p>Runner script: <a href="https://github.com/comino/blog-experiments/tree/main/01/scripts"><code>01/scripts/benchmark_runner.sh</code></a>.</p>
-<h2 id="data-provenance">Data Provenance</h2>
-<p>This article draws on data collected across multiple experiment iterations. All files are published in <a href="https://github.com/comino/blog-experiments/tree/main/01">comino/blog-experiments</a>:</p>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<table><thead><tr><th>Data</th><th>File</th><th>Description</th></tr></thead><tbody><tr><td>Storage audit</td><td><code>data/v3/system_parts_columns_audit.csv</code></td><td>Per-column compressed/uncompressed bytes, all variants</td></tr><tr><td>Query latency</td><td><code>data/v4/benchmark.csv</code></td><td>10 queries × 5 variants × 10 runs, cold + warm</td></tr><tr><td>Ingest throughput</td><td><code>data/v3/ingest_extended.csv</code></td><td>10 runs × 3 batch sizes × 5 variants</td></tr><tr><td>ProfileEvents</td><td><code>data/v5/profileevents_explain.md</code></td><td>PREWHERE analysis for Q05 read_rows</td></tr><tr><td>Gorilla comparison</td><td><code>data/v4/gorilla_comparison.csv</code></td><td>4 distributions, Gorilla+LZ4 vs LZ4</td></tr><tr><td>Plots</td><td><code>plots/v5/</code></td><td>All publication charts</td></tr><tr><td>Generator</td><td><code>scripts/generate_data.sql</code></td><td>Data generation script</td></tr></tbody></table>
-<p>Iterations reflect progressive experiment improvements based on peer review feedback. Storage and query data were collected on the same server configuration; no schema or data changes between iterations.</p>
+<h2 id="limitations">Limitations</h2>
+<p>Honest list, so you can judge how far these numbers carry:</p>
+<ol>
+<li><strong>Synthetic, perfectly regular data.</strong> Real metrics compress less.</li>
+<li><strong>Everything fits in RAM, single merged part, single-threaded queries.</strong> Production has many parts, concurrent load, and data bigger than memory. Each of these shifts the trade-offs, mostly in favor of better compression.</li>
+<li><strong>Fixed query order, no randomization.</strong> Warm runs could carry cache effects between queries.</li>
+<li><strong>I profiled decompression CPU for one query only</strong> (Q05). The explanation fits the other results but isn’t individually proven.</li>
+<li><strong>FPC codec not tested.</strong> It targets floats and might beat both LZ4 and Gorilla on the noisy value column.</li>
+</ol>
 <h2 id="references">References</h2>
 <ol>
 <li>Pelkonen, T., et al. “Gorilla: A Fast, Scalable, In-Memory Time Series Database.” VLDB 2015. <a href="https://www.vldb.org/pvldb/vol8/p1816-teller.pdf">PDF</a></li>
@@ -904,7 +706,7 @@
 <li><a href="https://altinity.com/blog/2019-7-new-encodings-to-improve-clickhouse">Altinity: New Encodings to Improve ClickHouse (2019)</a></li>
 </ol>
 <hr>
-<p><em>Tested on ClickHouse 25.11.3.54, Hetzner CX53 (16 vCPU, 32 GB RAM, NVMe SSD). Raw data and scripts: <a href="https://github.com/comino/blog-experiments/tree/main/01">github.com/comino/blog-experiments</a>.</em></p> <hr data-astro-cid-yvbahnfj> <p class="meta" data-astro-cid-yvbahnfj>
+<p><em>Tested on ClickHouse 25.11.3.54, Hetzner CX53 (16 vCPU, 32 GB RAM, NVMe SSD). Raw data, scripts and plots: <a href="https://github.com/comino/blog-experiments/tree/main/01">github.com/comino/blog-experiments</a>.</em></p> <hr data-astro-cid-yvbahnfj> <p class="meta" data-astro-cid-yvbahnfj>
 Questions, corrections, or a consulting project?
 <a href="mailto:mail@sveneliasson.de" data-astro-cid-yvbahnfj>Mail me</a> or find me on
 <a href="https://github.com/comino" data-astro-cid-yvbahnfj>GitHub</a>.
