@@ -1,0 +1,491 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>ClickHouse Projections vs Materialized Views: A Practical Benchmark</title><meta name="description" content="Projections and materialized views benchmarked on 200M rows of web analytics data in ClickHouse: query speedup, storage and ingest cost, and the unmerged-parts case where both are slower than the base table."><link rel="canonical" href="https://sveneliasson.de/clickhouse-projections-vs-materialized-views-benchmark/"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><meta property="og:title" content="ClickHouse Projections vs Materialized Views: A Practical Benchmark"><meta property="og:description" content="Projections and materialized views benchmarked on 200M rows of web analytics data in ClickHouse: query speedup, storage and ingest cost, and the unmerged-parts case where both are slower than the base table."><meta property="og:type" content="article"><meta property="og:url" content="https://sveneliasson.de/clickhouse-projections-vs-materialized-views-benchmark/"><meta property="og:image" content="https://sveneliasson.de/images/exp02-scaling-crossover.png"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="https://sveneliasson.de/images/exp02-scaling-crossover.png"><link rel="alternate" type="application/rss+xml" title="Sven Eliasson" href="/rss.xml"><link rel="sitemap" href="/sitemap-index.xml"><link rel="stylesheet" href="/_astro/_slug_.RFOjj78o.css">
+<style>.post-header[data-astro-cid-yvbahnfj]{margin-bottom:2rem}.back[data-astro-cid-yvbahnfj]{margin-right:.5rem}.cover[data-astro-cid-yvbahnfj]{display:block;width:100%;aspect-ratio:2 / 1;object-fit:cover;margin:0 0 2.2rem}
+</style></head> <body> <header class="site"> <div class="wrap"> <a href="/" class="brand"><span class="prompt">~$</span> sven.eliasson</a> <nav> <a href="/">writing</a> <a href="/about/">about</a> <a href="/rss.xml">rss</a> </nav> </div> </header> <main class="wrap">  <article data-astro-cid-yvbahnfj> <header class="post-header" data-astro-cid-yvbahnfj> <p class="meta" data-astro-cid-yvbahnfj> <a href="/" class="back" data-astro-cid-yvbahnfj>←</a> 25 Feb 2026 · 11 min read
+</p> <h1 data-astro-cid-yvbahnfj>ClickHouse Projections vs Materialized Views: A Practical Benchmark</h1> <ul class="chips" aria-label="Tags" data-astro-cid-yvbahnfj> <li class="chip" data-astro-cid-yvbahnfj>clickhouse</li><li class="chip" data-astro-cid-yvbahnfj>performance</li><li class="chip" data-astro-cid-yvbahnfj>data-modeling</li><li class="chip" data-astro-cid-yvbahnfj>projections</li><li class="chip" data-astro-cid-yvbahnfj>materialized-views</li> </ul> </header> <img class="cover" src="/images/exp02-scaling-crossover.png" alt="" loading="eager" data-astro-cid-yvbahnfj> <p>I benchmarked ClickHouse projections against materialized views (MVs) on a 200M-row web analytics dataset: query latency, storage overhead, and ingest cost. I also tested what happens when background merges fall behind, and that turned out to be the most interesting result.</p>
+<p>The short version:</p>
+<ol>
+<li><strong>For aggregation queries, both work equally well.</strong> ~50 ms instead of 470 ms on 200M rows, a 9.4× speedup, and projection vs MV is a tie.</li>
+<li><strong>Storage cost is the same too:</strong> +8% for an aggregating projection, +8% for an MV target. Re-sort projections are different: they store a full copy of the table (+129%).</li>
+<li><strong>Ingest is the hidden price.</strong> In my measurement, projections cost 73% of write throughput, MVs 69%.</li>
+<li><strong>With unmerged parts, both are <em>slower</em> than the base table.</strong> In a 55-part state, queries against the projection and the MV were 1.5–1.7× slower than a plain scan. After merging, the expected 4.2× speedup appeared.</li>
+<li><strong>Below a few tens of millions of rows, you don’t need either.</strong> A 10M-row scan takes 36 ms.</li>
+</ol>
+<p>All data, scripts and plots: <a href="https://github.com/comino/blog-experiments/tree/main/02">comino/blog-experiments</a>. Numbers are median ± IQR over 10 runs.</p>
+<h2 id="the-difference-in-30-seconds">The Difference in 30 Seconds</h2>
+<p><strong>Projections</strong> live <em>inside</em> the table: an alternative sort order or a pre-aggregation stored per part. The optimizer picks them automatically, queries stay plain SQL. But it only picks them when GROUP BY and aggregation functions match exactly.</p>
+<p><strong>Materialized views</strong> write into a separate target table on every INSERT. You get full control over schema, engine and TTL, but queries against the target need <code>-Merge()</code> combinator functions like <code>countMerge()</code> and <code>avgMerge()</code>.</p>
+<p>Both store partial aggregate states that ClickHouse merges in the background. That shared mechanism is exactly why both fall over when merging lags, as you’ll see below.</p>
+<h2 id="setup">Setup</h2>
+<ul>
+<li><strong>Server:</strong> Hetzner CX53 with 16 vCPU (AMD EPYC), 32 GB RAM, NVMe SSD</li>
+<li><strong>ClickHouse:</strong> 25.11.3.54 (the multi-part experiment ran later on 26.1.2)</li>
+<li><strong>Dataset:</strong> 200M synthetic web analytics rows (110M for the multi-part experiment)</li>
+<li><strong>Cold runs:</strong> all ClickHouse and OS caches dropped before each measurement</li>
+<li>Data fits in RAM, so “cold” means NVMe re-read, not sustained disk I/O</li>
+</ul>
+<h3 id="data-generation">Data Generation</h3>
+<pre class="astro-code astro-code-themes github-light github-dark" style="background-color:#fff;--shiki-dark-bg:#24292e;color:#24292e;--shiki-dark:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="sql"><code><span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">INSERT INTO</span><span style="color:#005CC5;--shiki-dark:#79B8FF"> exp02_projections</span><span style="color:#24292E;--shiki-dark:#E1E4E8">.</span><span style="color:#005CC5;--shiki-dark:#79B8FF">web_analytics_base</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">SELECT</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    toDateTime(</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'2024-01-01'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">) </span><span style="color:#D73A49;--shiki-dark:#F97583">+</span><span style="color:#005CC5;--shiki-dark:#79B8FF"> rand</span><span style="color:#24292E;--shiki-dark:#E1E4E8">(</span><span style="color:#D73A49;--shiki-dark:#F97583">number</span><span style="color:#24292E;--shiki-dark:#E1E4E8">) % (</span><span style="color:#005CC5;--shiki-dark:#79B8FF">365</span><span style="color:#D73A49;--shiki-dark:#F97583"> *</span><span style="color:#005CC5;--shiki-dark:#79B8FF"> 86400</span><span style="color:#24292E;--shiki-dark:#E1E4E8">) </span><span style="color:#D73A49;--shiki-dark:#F97583">AS</span><span style="color:#D73A49;--shiki-dark:#F97583"> timestamp</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#005CC5;--shiki-dark:#79B8FF">    rand</span><span style="color:#24292E;--shiki-dark:#E1E4E8">(</span><span style="color:#D73A49;--shiki-dark:#F97583">number</span><span style="color:#D73A49;--shiki-dark:#F97583"> +</span><span style="color:#005CC5;--shiki-dark:#79B8FF"> 1</span><span style="color:#24292E;--shiki-dark:#E1E4E8">) </span><span style="color:#D73A49;--shiki-dark:#F97583">AS</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> user_id,</span></span>
+<span class="line"><span style="color:#005CC5;--shiki-dark:#79B8FF">    concat</span><span style="color:#24292E;--shiki-dark:#E1E4E8">(</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'/page/'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">, toString(</span><span style="color:#005CC5;--shiki-dark:#79B8FF">rand</span><span style="color:#24292E;--shiki-dark:#E1E4E8">(</span><span style="color:#D73A49;--shiki-dark:#F97583">number</span><span style="color:#D73A49;--shiki-dark:#F97583"> +</span><span style="color:#005CC5;--shiki-dark:#79B8FF"> 2</span><span style="color:#24292E;--shiki-dark:#E1E4E8">) % </span><span style="color:#005CC5;--shiki-dark:#79B8FF">1000</span><span style="color:#24292E;--shiki-dark:#E1E4E8">)) </span><span style="color:#D73A49;--shiki-dark:#F97583">AS</span><span style="color:#D73A49;--shiki-dark:#F97583"> page</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#005CC5;--shiki-dark:#79B8FF">    rand</span><span style="color:#24292E;--shiki-dark:#E1E4E8">(</span><span style="color:#D73A49;--shiki-dark:#F97583">number</span><span style="color:#D73A49;--shiki-dark:#F97583"> +</span><span style="color:#005CC5;--shiki-dark:#79B8FF"> 3</span><span style="color:#24292E;--shiki-dark:#E1E4E8">) % </span><span style="color:#005CC5;--shiki-dark:#79B8FF">10000</span><span style="color:#D73A49;--shiki-dark:#F97583"> AS</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> duration_ms,</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    [</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'US'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'UK'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'DE'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'FR'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'JP'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'CN'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'BR'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'IN'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'CA'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'AU'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'MX'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'KR'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'IT'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'ES'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'NL'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#032F62;--shiki-dark:#9ECBFF">     'SE'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'NO'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'DK'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'FI'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'PL'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'CZ'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'AT'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'CH'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'BE'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'PT'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'IE'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'RU'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'TR'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'ZA'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'EG'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#032F62;--shiki-dark:#9ECBFF">     'NG'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'KE'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'AR'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'CL'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'CO'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'PE'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'TH'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'VN'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'PH'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'MY'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'SG'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'ID'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'TW'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'HK'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'NZ'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#032F62;--shiki-dark:#9ECBFF">     'IL'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'SA'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'AE'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'QA'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span><span style="color:#032F62;--shiki-dark:#9ECBFF">'UA'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">][1 + rand(number + 4) % 50] </span><span style="color:#D73A49;--shiki-dark:#F97583">AS</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> country,</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    ['desktop', 'mobile', 'tablet'][1 + rand(number + 5) % 3] </span><span style="color:#D73A49;--shiki-dark:#F97583">AS</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> device_type</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">FROM</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> numbers(</span><span style="color:#005CC5;--shiki-dark:#79B8FF">200000000</span><span style="color:#24292E;--shiki-dark:#E1E4E8">);</span></span></code></pre>
+<p>Timestamps span exactly one year (8,760 distinct hours), pages take 1,000 distinct values. That means the pre-aggregated key space is 1,000 × 8,760 = <strong>8.76M (page, hour) combinations</strong>. This number shows up again and again below.</p>
+<p>All tables use <code>ORDER BY (page, timestamp)</code>. After insert, <code>OPTIMIZE TABLE … FINAL</code> merged each table into a single part (except in the multi-part experiment).</p>
+<h3 id="the-contenders">The Contenders</h3>
+<p><strong>Base table</strong>, no tricks:</p>
+<pre class="astro-code astro-code-themes github-light github-dark" style="background-color:#fff;--shiki-dark-bg:#24292e;color:#24292e;--shiki-dark:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="sql"><code><span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">CREATE</span><span style="color:#D73A49;--shiki-dark:#F97583"> TABLE</span><span style="color:#6F42C1;--shiki-dark:#B392F0"> web_analytics_base</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> (</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">    timestamp</span><span style="color:#D73A49;--shiki-dark:#F97583"> DateTime</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    user_id UInt32,</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">    page</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> LowCardinality(String),</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    duration_ms UInt32,</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    country LowCardinality(String),</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    device_type LowCardinality(String)</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">) ENGINE </span><span style="color:#D73A49;--shiki-dark:#F97583">=</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> MergeTree()</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">ORDER BY</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> (</span><span style="color:#D73A49;--shiki-dark:#F97583">page</span><span style="color:#24292E;--shiki-dark:#E1E4E8">, </span><span style="color:#D73A49;--shiki-dark:#F97583">timestamp</span><span style="color:#24292E;--shiki-dark:#E1E4E8">);</span></span></code></pre>
+<p><strong>Projection table</strong>: same schema plus two projections. One re-sorts the full data by country, one pre-aggregates hourly stats:</p>
+<pre class="astro-code astro-code-themes github-light github-dark" style="background-color:#fff;--shiki-dark-bg:#24292e;color:#24292e;--shiki-dark:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="sql"><code><span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">CREATE</span><span style="color:#D73A49;--shiki-dark:#F97583"> TABLE</span><span style="color:#6F42C1;--shiki-dark:#B392F0"> web_analytics_proj</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> (</span></span>
+<span class="line"><span style="color:#6A737D;--shiki-dark:#6A737D">    -- ... same 6 columns ...</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    PROJECTION proj_country_time (</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">        SELECT</span><span style="color:#D73A49;--shiki-dark:#F97583"> *</span><span style="color:#D73A49;--shiki-dark:#F97583"> ORDER BY</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> country, </span><span style="color:#D73A49;--shiki-dark:#F97583">timestamp</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    ),</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    PROJECTION proj_hourly_stats (</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">        SELECT</span><span style="color:#D73A49;--shiki-dark:#F97583"> page</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">               toStartOfHour(</span><span style="color:#D73A49;--shiki-dark:#F97583">timestamp</span><span style="color:#24292E;--shiki-dark:#E1E4E8">) </span><span style="color:#D73A49;--shiki-dark:#F97583">AS</span><span style="color:#D73A49;--shiki-dark:#F97583"> hour</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#005CC5;--shiki-dark:#79B8FF">               count</span><span style="color:#24292E;--shiki-dark:#E1E4E8">() </span><span style="color:#D73A49;--shiki-dark:#F97583">AS</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> hits,</span></span>
+<span class="line"><span style="color:#005CC5;--shiki-dark:#79B8FF">               avg</span><span style="color:#24292E;--shiki-dark:#E1E4E8">(duration_ms) </span><span style="color:#D73A49;--shiki-dark:#F97583">AS</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> avg_duration,</span></span>
+<span class="line"><span style="color:#005CC5;--shiki-dark:#79B8FF">               sum</span><span style="color:#24292E;--shiki-dark:#E1E4E8">(duration_ms) </span><span style="color:#D73A49;--shiki-dark:#F97583">AS</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> sum_duration</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">        GROUP BY</span><span style="color:#D73A49;--shiki-dark:#F97583"> page</span><span style="color:#24292E;--shiki-dark:#E1E4E8">, </span><span style="color:#D73A49;--shiki-dark:#F97583">hour</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    )</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">) ENGINE </span><span style="color:#D73A49;--shiki-dark:#F97583">=</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> MergeTree()</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">ORDER BY</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> (</span><span style="color:#D73A49;--shiki-dark:#F97583">page</span><span style="color:#24292E;--shiki-dark:#E1E4E8">, </span><span style="color:#D73A49;--shiki-dark:#F97583">timestamp</span><span style="color:#24292E;--shiki-dark:#E1E4E8">);</span></span></code></pre>
+<p><strong>MV</strong>: a target table with aggregate-state columns, fed by a materialized view:</p>
+<pre class="astro-code astro-code-themes github-light github-dark" style="background-color:#fff;--shiki-dark-bg:#24292e;color:#24292e;--shiki-dark:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="sql"><code><span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">CREATE</span><span style="color:#D73A49;--shiki-dark:#F97583"> TABLE</span><span style="color:#6F42C1;--shiki-dark:#B392F0"> hourly_stats_mv_target</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> (</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">    page</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> LowCardinality(String),</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">    hour</span><span style="color:#D73A49;--shiki-dark:#F97583"> DateTime</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    hits AggregateFunction(count, UInt64),</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    avg_duration AggregateFunction(avg, UInt32),</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    sum_duration AggregateFunction(sum, UInt32)</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">) ENGINE </span><span style="color:#D73A49;--shiki-dark:#F97583">=</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> AggregatingMergeTree()</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">ORDER BY</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> (</span><span style="color:#D73A49;--shiki-dark:#F97583">page</span><span style="color:#24292E;--shiki-dark:#E1E4E8">, </span><span style="color:#D73A49;--shiki-dark:#F97583">hour</span><span style="color:#24292E;--shiki-dark:#E1E4E8">);</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">CREATE</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> MATERIALIZED VIEW hourly_stats_mv</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">TO</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> hourly_stats_mv_target </span><span style="color:#D73A49;--shiki-dark:#F97583">AS</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">SELECT</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">    page</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    toStartOfHour(</span><span style="color:#D73A49;--shiki-dark:#F97583">timestamp</span><span style="color:#24292E;--shiki-dark:#E1E4E8">) </span><span style="color:#D73A49;--shiki-dark:#F97583">AS</span><span style="color:#D73A49;--shiki-dark:#F97583"> hour</span><span style="color:#24292E;--shiki-dark:#E1E4E8">,</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    countState() </span><span style="color:#D73A49;--shiki-dark:#F97583">AS</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> hits,</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    avgState(duration_ms) </span><span style="color:#D73A49;--shiki-dark:#F97583">AS</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> avg_duration,</span></span>
+<span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    sumState(duration_ms) </span><span style="color:#D73A49;--shiki-dark:#F97583">AS</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> sum_duration</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">FROM</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> web_analytics_mv_source</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">GROUP BY</span><span style="color:#D73A49;--shiki-dark:#F97583"> page</span><span style="color:#24292E;--shiki-dark:#E1E4E8">, </span><span style="color:#D73A49;--shiki-dark:#F97583">hour</span><span style="color:#24292E;--shiki-dark:#E1E4E8">;</span></span></code></pre>
+<p>Note the <code>-State</code> functions. They store intermediate aggregation states, not final values. Reading them back requires the matching <code>-Merge()</code> functions.</p>
+<h2 id="storage">Storage</h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Configuration</th><th align="right">Compressed</th><th align="right">Overhead vs Base</th></tr></thead><tbody><tr><td>Base only</td><td align="right">1.34 GB</td><td align="right">baseline</td></tr><tr><td>Base + aggregating projection</td><td align="right">1.45 GB</td><td align="right">+8%</td></tr><tr><td>MV source + MV target</td><td align="right">1.45 GB</td><td align="right">+8%</td></tr><tr><td>Base + both projections (re-sort + agg)</td><td align="right">3.07 GB</td><td align="right"><strong>+129%</strong></td></tr></tbody></table>
+<p><img src="/images/exp02-storage-breakdown.png" alt="Storage breakdown by configuration"></p>
+<p>The aggregating projection and the MV target cost the same: ~108 MB for 8.76M pre-aggregated rows. The +129% case is the re-sort projection <code>proj_country_time</code>: it stores a complete second copy of all six columns, sorted differently. Know that before you add one.</p>
+<h2 id="query-benchmark">Query Benchmark</h2>
+<p>Three queries against the 200M-row tables:</p>
+<pre class="astro-code astro-code-themes github-light github-dark" style="background-color:#fff;--shiki-dark-bg:#24292e;color:#24292e;--shiki-dark:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="sql"><code><span class="line"><span style="color:#6A737D;--shiki-dark:#6A737D">-- Q1: Point lookup (one page, one day)</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">SELECT</span><span style="color:#005CC5;--shiki-dark:#79B8FF"> count</span><span style="color:#24292E;--shiki-dark:#E1E4E8">(), </span><span style="color:#005CC5;--shiki-dark:#79B8FF">avg</span><span style="color:#24292E;--shiki-dark:#E1E4E8">(duration_ms)</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">FROM</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> web_analytics_base          </span><span style="color:#6A737D;--shiki-dark:#6A737D">-- or web_analytics_proj</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">WHERE</span><span style="color:#D73A49;--shiki-dark:#F97583"> page</span><span style="color:#D73A49;--shiki-dark:#F97583"> =</span><span style="color:#032F62;--shiki-dark:#9ECBFF"> '/page/0'</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">  AND</span><span style="color:#D73A49;--shiki-dark:#F97583"> timestamp</span><span style="color:#D73A49;--shiki-dark:#F97583"> BETWEEN</span><span style="color:#032F62;--shiki-dark:#9ECBFF"> '2024-01-15'</span><span style="color:#D73A49;--shiki-dark:#F97583"> AND</span><span style="color:#032F62;--shiki-dark:#9ECBFF"> '2024-01-16'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D;--shiki-dark:#6A737D">-- Q2: Country filter (one month). Country is not in the base sort key.</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">SELECT</span><span style="color:#005CC5;--shiki-dark:#79B8FF"> count</span><span style="color:#24292E;--shiki-dark:#E1E4E8">(), </span><span style="color:#005CC5;--shiki-dark:#79B8FF">avg</span><span style="color:#24292E;--shiki-dark:#E1E4E8">(duration_ms)</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">FROM</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> web_analytics_base          </span><span style="color:#6A737D;--shiki-dark:#6A737D">-- or web_analytics_proj</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">WHERE</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> country </span><span style="color:#D73A49;--shiki-dark:#F97583">=</span><span style="color:#032F62;--shiki-dark:#9ECBFF"> 'US'</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">  AND</span><span style="color:#D73A49;--shiki-dark:#F97583"> timestamp</span><span style="color:#D73A49;--shiki-dark:#F97583"> BETWEEN</span><span style="color:#032F62;--shiki-dark:#9ECBFF"> '2024-01-01'</span><span style="color:#D73A49;--shiki-dark:#F97583"> AND</span><span style="color:#032F62;--shiki-dark:#9ECBFF"> '2024-02-01'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D;--shiki-dark:#6A737D">-- Q3: Full aggregation (top pages by avg duration)</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">SELECT</span><span style="color:#D73A49;--shiki-dark:#F97583"> page</span><span style="color:#24292E;--shiki-dark:#E1E4E8">, </span><span style="color:#005CC5;--shiki-dark:#79B8FF">avg</span><span style="color:#24292E;--shiki-dark:#E1E4E8">(duration_ms) </span><span style="color:#D73A49;--shiki-dark:#F97583">AS</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> avg_d</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">FROM</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> web_analytics_base          </span><span style="color:#6A737D;--shiki-dark:#6A737D">-- or web_analytics_proj</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">GROUP BY</span><span style="color:#D73A49;--shiki-dark:#F97583"> page</span><span style="color:#D73A49;--shiki-dark:#F97583"> ORDER BY</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> avg_d </span><span style="color:#D73A49;--shiki-dark:#F97583">DESC</span><span style="color:#D73A49;--shiki-dark:#F97583"> LIMIT</span><span style="color:#005CC5;--shiki-dark:#79B8FF"> 10</span><span style="color:#24292E;--shiki-dark:#E1E4E8">;</span></span>
+<span class="line"></span>
+<span class="line"><span style="color:#6A737D;--shiki-dark:#6A737D">-- Q3 against the MV target needs -Merge():</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">SELECT</span><span style="color:#D73A49;--shiki-dark:#F97583"> page</span><span style="color:#24292E;--shiki-dark:#E1E4E8">, avgMerge(avg_duration) </span><span style="color:#D73A49;--shiki-dark:#F97583">AS</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> avg_d</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">FROM</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> hourly_stats_mv_target</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">GROUP BY</span><span style="color:#D73A49;--shiki-dark:#F97583"> page</span><span style="color:#D73A49;--shiki-dark:#F97583"> ORDER BY</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> avg_d </span><span style="color:#D73A49;--shiki-dark:#F97583">DESC</span><span style="color:#D73A49;--shiki-dark:#F97583"> LIMIT</span><span style="color:#005CC5;--shiki-dark:#79B8FF"> 10</span><span style="color:#24292E;--shiki-dark:#E1E4E8">;</span></span></code></pre>
+<p>Results (median ± IQR, ms, n=10):</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Query</th><th align="right">Base</th><th align="right">Projection</th><th align="right">MV Target</th><th align="left">Notes</th></tr></thead><tbody><tr><td><strong>Q1 cold</strong></td><td align="right">16 ± 4</td><td align="right">18 ± 2</td><td align="right">12 ± 1</td><td align="left">MV reads a smaller table</td></tr><tr><td><strong>Q1 warm</strong></td><td align="right">5 ± 0</td><td align="right">7 ± 0</td><td align="right">5 ± 0</td><td align="left">all tied</td></tr><tr><td><strong>Q2 cold</strong></td><td align="right">26 ± 1</td><td align="right">23 ± 2</td><td align="right">n/a</td><td align="left">re-sort projection helps a little</td></tr><tr><td><strong>Q2 warm</strong></td><td align="right">9 ± 1</td><td align="right">11 ± 2</td><td align="right">n/a</td><td align="left">no MV for country queries</td></tr><tr><td><strong>Q3 cold</strong></td><td align="right"><strong>470 ± 20</strong></td><td align="right"><strong>50 ± 2</strong></td><td align="right"><strong>49 ± 4</strong></td><td align="left"><strong>9.4× faster</strong></td></tr><tr><td><strong>Q3 warm</strong></td><td align="right">178 ± 5</td><td align="right">23 ± 1</td><td align="right">23 ± 1</td><td align="left">both pre-agg tied</td></tr></tbody></table>
+<p>What this says:</p>
+<ul>
+<li><strong>Q1:</strong> the base <code>ORDER BY (page, timestamp)</code> already handles point lookups well. Nothing to win here. <code>EXPLAIN</code> confirms the optimizer doesn’t even use a projection for this query.</li>
+<li><strong>Q2:</strong> the re-sort projection saves 3 ms cold. That’s what +129% storage buys on this query mix.</li>
+<li><strong>Q3 is the whole story:</strong> instead of scanning 200M rows, both pre-aggregation approaches read the 8.76M-row summary. 470 ms becomes 50 ms.</li>
+</ul>
+<p>For a clean head-to-head I also ran an aggregating projection against an MV on two more query shapes (n=10): filtering one page is a tie (70 vs 69 ms cold), and a full scan across all pages has the MV ~10% ahead (511 vs 570 ms cold). Its dedicated <code>AggregatingMergeTree</code> table has a small edge over the projection, which shares storage with the base table.</p>
+<p><img src="/images/exp02-fair-comparison.png" alt="Projection vs MV head-to-head"></p>
+<h3 id="what-the-optimizer-actually-picks">What the Optimizer Actually Picks</h3>
+<p>Projections only fire when the query matches. I tested 8 patterns against the projection table:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Query Pattern</th><th align="center">Projection Used?</th><th>Why</th></tr></thead><tbody><tr><td>Point lookup (<code>WHERE page=… AND ts=…</code>)</td><td align="center">❌</td><td>base sort key already optimal</td></tr><tr><td>Month rollup for one page</td><td align="center">❌</td><td>page is the first sort key column</td></tr><tr><td>Country filter</td><td align="center">✅ re-sort</td><td>country not in base sort key</td></tr><tr><td>Country + time range</td><td align="center">✅ re-sort</td><td>both in projection sort key</td></tr><tr><td>Top-K by avg duration</td><td align="center">✅ aggregating</td><td>matches GROUP BY + aggregation</td></tr><tr><td>Top-K with HAVING</td><td align="center">✅ aggregating</td><td>still matches</td></tr><tr><td><code>uniqExact(user_id)</code></td><td align="center">❌</td><td>no projection covers user_id</td></tr><tr><td>Multi-dimension GROUP BY</td><td align="center">❌</td><td>no matching projection</td></tr></tbody></table>
+<p>A <code>sum()</code> query will not use a projection that stores <code>avg()</code>. An extra GROUP BY column breaks the match. <strong>Always check with <code>EXPLAIN indexes=1</code></strong> instead of assuming.</p>
+<h2 id="when-does-pre-aggregation-pay-off">When Does Pre-Aggregation Pay Off?</h2>
+<p>Same aggregation query (Q3) at three dataset sizes, single merged part, cold:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Size</th><th align="right">Base</th><th align="right">Projection</th><th align="right">MV</th><th align="center">Speedup</th></tr></thead><tbody><tr><td>10M</td><td align="right">36 ± 3 ms</td><td align="right">18 ± 1 ms</td><td align="right">16 ± 1 ms</td><td align="center">2.0×</td></tr><tr><td>50M</td><td align="right">134 ± 7 ms</td><td align="right">64 ± 3 ms</td><td align="right">67 ± 4 ms</td><td align="center">2.1×</td></tr><tr><td>110M</td><td align="right">278 ± 9 ms</td><td align="right">66 ± 2 ms</td><td align="right">66 ± 2 ms</td><td align="center">4.2×</td></tr></tbody></table>
+<p><img src="/images/exp02-scaling-crossover.png" alt="Scaling: when pre-aggregation pays off"></p>
+<p>At 10M rows the base scan takes 36 ms. Nobody needs to optimize that. The point where pre-aggregation starts to matter is somewhere between 10M and 50M rows for this query on this hardware.</p>
+<p>The mechanism behind the growing speedup: the base scan grows linearly with table size, but the pre-aggregated summary is capped by its key space (8.76M rows, no matter how big the base table gets). The bigger the table, the bigger the win.</p>
+<h2 id="the-multi-part-reality-check">The Multi-Part Reality Check</h2>
+<p>Everything above used <code>OPTIMIZE FINAL</code>: one merged part, the best case. Production doesn’t look like that. Data streams in, parts pile up, and background merges have to catch up. So I built the bad case deliberately: 110M rows inserted in 11 batches with background merges stopped, leaving 55 unmerged parts.</p>
+<p>The state before merging, from <code>system.parts</code>:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Table</th><th align="right">Parts</th><th align="right">Rows</th><th align="right">Disk</th></tr></thead><tbody><tr><td>base</td><td align="right">55</td><td align="right">110M</td><td align="right">1.31 GiB</td></tr><tr><td>projection table</td><td align="right">55</td><td align="right">110M</td><td align="right">2.38 GiB</td></tr><tr><td>MV target</td><td align="right">110</td><td align="right"><strong>98.3M</strong></td><td align="right">1.07 GiB</td></tr></tbody></table>
+<p>The MV target should have 8.76M rows. It has <strong>98.3M</strong>, eleven times too many, because every unmerged part carries its own partial aggregates for the same (page, hour) keys.</p>
+<p>Same aggregation query as before, on this state:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>State</th><th align="right">Base</th><th align="right">Projection</th><th align="right">MV</th></tr></thead><tbody><tr><td>55 parts, cold</td><td align="right"><strong>270 ± 11</strong></td><td align="right">415 ± 20</td><td align="right">470 ± 14</td></tr><tr><td>55 parts, warm</td><td align="right"><strong>108 ± 7</strong></td><td align="right">251 ± 19</td><td align="right">252 ± 11</td></tr><tr><td>merged, cold</td><td align="right">278 ± 17</td><td align="right"><strong>66 ± 3</strong></td><td align="right"><strong>66 ± 4</strong></td></tr><tr><td>merged, warm</td><td align="right">96 ± 11</td><td align="right"><strong>38 ± 2</strong></td><td align="right"><strong>39 ± 5</strong></td></tr></tbody></table>
+<p><img src="/images/exp02-multipart-comparison.png" alt="Unmerged vs merged: the speedup flips"></p>
+<p><strong>With 55 unmerged parts, the base table wins.</strong> The projection and MV queries had to read 98M rows of aggregate-state data, which is wider and more expensive per row than the base table’s plain integers. After <code>OPTIMIZE FINAL</code>, the MV target collapsed from 98.3M to 8.76M rows and both approaches delivered their 4.2× speedup.</p>
+<p>What I take from this:</p>
+<ol>
+<li><strong>Merging is a prerequisite, not a cleanup step.</strong> Unmerged projections and MVs can actively hurt.</li>
+<li><strong>The MV target row count is your canary.</strong> <code>SELECT count() FROM mv_target</code> should be close to your key-space size. Mine was 11× over.</li>
+<li><strong>High ingest with lagging merges is the danger zone.</strong> My 55-part state is an extreme; a production burst might create 5–20 parts with proportionally milder damage. But the direction is the same.</li>
+</ol>
+<h2 id="ingest-cost">Ingest Cost</h2>
+<p>Ingest throughput, fresh tables, rand()-generated rows, n=10:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Variant</th><th align="right">1M batch (rows/s)</th><th align="right">10M batch (rows/s)</th><th align="right">vs Base (10M)</th></tr></thead><tbody><tr><td>Base</td><td align="right">2,540K ± 151K</td><td align="right">3,000K ± 37K</td><td align="right">baseline</td></tr><tr><td>Projection</td><td align="right">732K ± 31K</td><td align="right">820K ± 21K</td><td align="right"><strong>−73%</strong></td></tr><tr><td>MV</td><td align="right">672K ± 15K</td><td align="right">931K ± 18K</td><td align="right"><strong>−69%</strong></td></tr></tbody></table>
+<p><img src="/images/exp02-ingest-impact.png" alt="Ingest cost of projections and MVs"></p>
+<p>That is a lot. Both approaches compute aggregations on every insert, and it shows.</p>
+<p>The absolute overhead depends on how you measure: in a second test that copied rows from an existing table instead of generating them (n=5), the projection cost 49% and the MV 30%. The ordering was the same in both tests: <strong>the MV is consistently the cheaper of the two on ingest</strong>, because it writes its aggregates to a separate table instead of computing them inside every part of the base table.</p>
+<p>If ingest is your bottleneck, look at Refreshable Materialized Views (ClickHouse 23.12+): they recompute periodically instead of on every insert, trading freshness for write throughput. I didn’t benchmark them here.</p>
+<h2 id="which-one">Which One?</h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Scenario</th><th align="left">Recommendation</th></tr></thead><tbody><tr><td>Dashboard aggregations, known query patterns</td><td align="left">Either. Pick by ingest tolerance and syntax preference</td></tr><tr><td>Ad-hoc queries on a second sort dimension</td><td align="left">Projection (re-sort), if the +100% storage is acceptable</td></tr><tr><td>Ingest-sensitive workload</td><td align="left">MV, or Refreshable MV</td></tr><tr><td>Multi-level rollups (hourly → daily → monthly)</td><td align="left">MV. Projections can’t cascade</td></tr><tr><td>Separate retention/TTL for aggregates</td><td align="left">MV. Projections share the base table’s TTL</td></tr><tr><td>Small table (&#x3C; a few 10M rows)</td><td align="left">Neither. The scan is already fast</td></tr><tr><td>Minimal operational surface</td><td align="left">Projection. No extra tables, plain SQL</td></tr></tbody></table>
+<p>My default: <strong>start with the base table.</strong> When a specific aggregation query gets too slow, add an aggregating projection first, because it’s transparent to every query and every team member. Move to an MV when you need cascading, separate TTL, or cheaper ingest.</p>
+<p>And whichever you pick: <strong>watch your parts.</strong> An unmerged MV target with 98M rows instead of 8.76M is not an optimization, it’s a regression.</p>
+<pre class="astro-code astro-code-themes github-light github-dark" style="background-color:#fff;--shiki-dark-bg:#24292e;color:#24292e;--shiki-dark:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="plaintext"><code><span class="line"><span>Do you need an alternative sort order?</span></span>
+<span class="line"><span>  → Yes: Re-sort projection (costs a full data copy)</span></span>
+<span class="line"><span>  → No: Do you need pre-aggregation at all?  (&#x3C; ~50M rows: probably not)</span></span>
+<span class="line"><span>    → Ingest-critical, cascading rollups, or own TTL?</span></span>
+<span class="line"><span>      → Yes: Materialized View (requires -Merge() syntax)</span></span>
+<span class="line"><span>      → No:  Aggregating projection (transparent SQL)</span></span>
+<span class="line"><span></span></span>
+<span class="line"><span>Either way: monitor system.parts and keep background merges healthy.</span></span></code></pre>
+<h2 id="limitations">Limitations</h2>
+<ol>
+<li><strong>Synthetic uniform data.</strong> Real traffic has power-law pages and geographic clustering. The 8.76M-key saturation behavior depends on my uniform distribution.</li>
+<li><strong>Data fits in RAM.</strong> With data well beyond memory, pre-aggregation’s I/O advantage grows.</li>
+<li><strong>The 55-part state is artificial.</strong> I stopped background merges to build it. It shows the mechanism, not a typical magnitude. The multi-part run also used a newer ClickHouse (26.1.2); the effect follows from the MergeTree architecture, not the version.</li>
+<li><strong>Single writer.</strong> Concurrent inserts interact with merge scheduling in ways I didn’t measure.</li>
+<li><strong>Refreshable MVs and MV chaining untested.</strong> Both would matter in a real decision.</li>
+<li><strong>Projection operational caveats not explored:</strong> adding a projection later requires a full <code>MATERIALIZE PROJECTION</code> rescan, and projections share the base table’s TTL and partition lifecycle.</li>
+</ol>
+<h2 id="references">References</h2>
+<ol>
+<li><a href="https://clickhouse.com/docs/managing-data/materialized-views-versus-projections">Projections vs Materialized Views (ClickHouse Docs)</a></li>
+<li><a href="https://clickhouse.com/docs/data-modeling/projections">Projections Deep Dive (ClickHouse Docs)</a></li>
+<li><a href="https://kb.altinity.com/altinity-kb-queries-and-syntax/projections-examples/">Altinity: Projection Examples</a></li>
+<li><a href="https://clickhouse.com/docs/sql-reference/statements/create/view#refreshable-materialized-view">Refreshable Materialized Views (ClickHouse Docs)</a></li>
+</ol>
+<hr>
+<p><em>Tested on ClickHouse 25.11.3.54 / 26.1.2, Hetzner CX53 (16 vCPU, 32 GB RAM, NVMe SSD). Raw data, scripts and plots: <a href="https://github.com/comino/blog-experiments/tree/main/02">github.com/comino/blog-experiments</a>.</em></p> <hr data-astro-cid-yvbahnfj> <p class="meta" data-astro-cid-yvbahnfj>
+Questions, corrections, or a consulting project?
+<a href="mailto:mail@sveneliasson.de" data-astro-cid-yvbahnfj>Mail me</a> or find me on
+<a href="https://github.com/comino" data-astro-cid-yvbahnfj>GitHub</a>.
+</p> </article>   </main> <footer class="site"> <div class="wrap"> <span>© 2026 Sven Eliasson</span> <span> <a href="https://github.com/comino">github</a> ·
+<a href="https://gitlab.com/comino">gitlab</a> ·
+<a href="mailto:mail@sveneliasson.de">email</a> ·
+<a href="/rss.xml">rss</a> </span> </div> </footer> </body></html>
