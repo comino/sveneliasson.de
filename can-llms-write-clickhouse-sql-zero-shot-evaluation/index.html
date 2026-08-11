@@ -1,18 +1,19 @@
-<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Can LLMs Write ClickHouse SQL? 22 Models, Two Generations, One Benchmark</title><meta name="description" content="22 LLMs from two model generations write ClickHouse SQL for the same 50 questions: strict and adjusted accuracy, cost per correct query, and what six months of model progress actually changed."><link rel="canonical" href="https://sveneliasson.de/can-llms-write-clickhouse-sql-zero-shot-evaluation/"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><meta property="og:title" content="Can LLMs Write ClickHouse SQL? 22 Models, Two Generations, One Benchmark"><meta property="og:description" content="22 LLMs from two model generations write ClickHouse SQL for the same 50 questions: strict and adjusted accuracy, cost per correct query, and what six months of model progress actually changed."><meta property="og:type" content="article"><meta property="og:url" content="https://sveneliasson.de/can-llms-write-clickhouse-sql-zero-shot-evaluation/"><meta property="og:image" content="https://sveneliasson.de/images/exp03-generation-deltas.png"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="https://sveneliasson.de/images/exp03-generation-deltas.png"><link rel="alternate" type="application/rss+xml" title="Sven Eliasson" href="/rss.xml"><link rel="sitemap" href="/sitemap-index.xml"><link rel="stylesheet" href="/_astro/_slug_.RFOjj78o.css">
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Can LLMs Write ClickHouse SQL? A Zero-Shot Benchmark of 22 Models</title><meta name="description" content="22 LLMs generate ClickHouse SQL for 50 questions, zero-shot. Strict and adjusted accuracy, cost per correct query, failure classification, and the limits of output-matching benchmarks."><link rel="canonical" href="https://sveneliasson.de/can-llms-write-clickhouse-sql-zero-shot-evaluation/"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><meta property="og:title" content="Can LLMs Write ClickHouse SQL? A Zero-Shot Benchmark of 22 Models"><meta property="og:description" content="22 LLMs generate ClickHouse SQL for 50 questions, zero-shot. Strict and adjusted accuracy, cost per correct query, failure classification, and the limits of output-matching benchmarks."><meta property="og:type" content="article"><meta property="og:url" content="https://sveneliasson.de/can-llms-write-clickhouse-sql-zero-shot-evaluation/"><meta property="og:image" content="https://sveneliasson.de/images/exp03-cost-efficiency.png"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="https://sveneliasson.de/images/exp03-cost-efficiency.png"><link rel="alternate" type="application/rss+xml" title="Sven Eliasson" href="/rss.xml"><link rel="sitemap" href="/sitemap-index.xml"><link rel="stylesheet" href="/_astro/_slug_.RFOjj78o.css">
 <style>.post-header[data-astro-cid-yvbahnfj]{margin-bottom:2rem}.back[data-astro-cid-yvbahnfj]{margin-right:.5rem}.cover[data-astro-cid-yvbahnfj]{display:block;width:100%;aspect-ratio:2 / 1;object-fit:cover;margin:0 0 2.2rem}
 </style></head> <body> <header class="site"> <div class="wrap"> <a href="/" class="brand"><span class="prompt">~$</span> sven.eliasson</a> <nav> <a href="/">writing</a> <a href="/about/">about</a> <a href="/rss.xml">rss</a> </nav> </div> </header> <main class="wrap">  <article data-astro-cid-yvbahnfj> <header class="post-header" data-astro-cid-yvbahnfj> <p class="meta" data-astro-cid-yvbahnfj> <a href="/" class="back" data-astro-cid-yvbahnfj>←</a> 11 Aug 2026 · 10 min read
-</p> <h1 data-astro-cid-yvbahnfj>Can LLMs Write ClickHouse SQL? 22 Models, Two Generations, One Benchmark</h1> <ul class="chips" aria-label="Tags" data-astro-cid-yvbahnfj> <li class="chip" data-astro-cid-yvbahnfj>clickhouse</li><li class="chip" data-astro-cid-yvbahnfj>llm</li><li class="chip" data-astro-cid-yvbahnfj>sql</li><li class="chip" data-astro-cid-yvbahnfj>benchmark</li> </ul> </header> <img class="cover" src="/images/exp03-generation-deltas.png" alt="" loading="eager" data-astro-cid-yvbahnfj> <p>ClickHouse SQL is almost standard SQL, until it isn’t. Functions like <code>quantile()</code>, <code>arrayJoin()</code>, <code>-If</code> combinators and <code>WITH FILL</code> make it a dialect that rewards familiarity. In February 2026 I benchmarked 8 LLMs on 50 ClickHouse questions. Six months later the model landscape had turned over completely, so I reran the same benchmark on 14 successor models: same questions, same prompts, same scoring.</p>
-<p>The short version:</p>
+</p> <h1 data-astro-cid-yvbahnfj>Can LLMs Write ClickHouse SQL? A Zero-Shot Benchmark of 22 Models</h1> <ul class="chips" aria-label="Tags" data-astro-cid-yvbahnfj> <li class="chip" data-astro-cid-yvbahnfj>clickhouse</li><li class="chip" data-astro-cid-yvbahnfj>llm</li><li class="chip" data-astro-cid-yvbahnfj>sql</li><li class="chip" data-astro-cid-yvbahnfj>benchmark</li> </ul> </header> <img class="cover" src="/images/exp03-cost-efficiency.png" alt="" loading="eager" data-astro-cid-yvbahnfj> <p>ClickHouse SQL deviates from standard SQL in ways that matter for text-to-SQL: <code>quantile()</code>, <code>arrayJoin()</code>, <code>-If</code> combinators, <code>WITH FILL</code>, map and array functions. This benchmark measures how well current LLMs handle the dialect in the hardest setting: zero-shot, one attempt, no examples.</p>
+<p>22 models, 50 questions, 3 runs per question, 3,300 scored queries total. Each generated query is executed against a live ClickHouse database and its output compared to a hand-written reference query.</p>
+<p>Key results:</p>
 <ol>
-<li><strong>Every model family improved.</strong> The generation-over-generation gains range from +2 points (Claude Opus) to +11.3 points (Claude Sonnet), with most families gaining 7 to 9 points of strict accuracy.</li>
-<li><strong>The mid-tier caught up with the flagships.</strong> Claude Sonnet 5 (73.3%) sits one correct run behind Claude Opus 5 (74.0%) at a third of the price. GPT-5.6-Terra, a $1/M mid-tier model, beats GPT-5.5, the $5/M flagship.</li>
-<li><strong>“Pro” buys nothing here.</strong> All three GPT-5.6 pro variants score <em>lower</em> on strict accuracy than their same-priced base models.</li>
-<li><strong>Two capability gaps closed, two remain.</strong> <code>WITH FILL</code> went from 0% to 93% correct and CTE + tuple subqueries from 0% to 88%. But the two questions that fooled every model in February still fool every model today.</li>
-<li><strong>The benchmark broke too.</strong> My own hand-written reference query stopped working after a ClickHouse upgrade, and re-checking the February data with an automated classifier exposed an error in my manual failure labels. Details below, because both changed the numbers.</li>
+<li><strong>Strict accuracy ranges from 60.0% to 74.0%.</strong> Claude Opus 5 leads at 74.0%, followed by Claude Sonnet 5 (73.3%) and Kimi K3 (72.7%). The whole field sits within 14 points.</li>
+<li><strong>Most failures are not wrong SQL.</strong> Classifying every failed run: 82% of wrong-result queries in the August wave (87% in February) have correct logic and differ from the reference only in output format or column selection. Genuine logic errors are 5.2% of all runs in the most recent wave. Adjusted for this, accuracy ranges from 86.7% to 95.3%.</li>
+<li><strong>Cost per correct query spans a factor of ~240</strong> within the current lineup: $0.00016 (DeepSeek V4-Flash) to $0.038 (GPT-5.6-Sol-Pro).</li>
+<li><strong>Price does not predict accuracy.</strong> GPT-5.6-Terra ($1/M input) scores higher than both GPT-5.5 and GPT-5.6-Sol ($5/M each). All three GPT-5.6 pro variants score lower on strict accuracy than their same-priced base models.</li>
 </ol>
-<p>Everything is reproducible: <a href="https://github.com/comino/blog-experiments/tree/main/03">data, scripts and charts</a>. Total API cost for the August rerun: about $9.</p>
+<p>Data, scripts and charts: <a href="https://github.com/comino/blog-experiments/tree/main/03">comino/blog-experiments/03</a>.</p>
 <h2 id="setup">Setup</h2>
-<p>Two tables in a ClickHouse database, ~1M events and ~10K users of synthetic web analytics data (deterministically generated, so both waves ran against identical data):</p>
+<h3 id="schema-and-data">Schema and data</h3>
+<p>Two tables, ~1M events and ~10K users of synthetic web analytics data. Data generation is deterministic (<code>rand(number)</code> seeding), so every evaluation runs against identical data.</p>
 <pre class="astro-code astro-code-themes github-light github-dark" style="background-color:#fff;--shiki-dark-bg:#24292e;color:#24292e;--shiki-dark:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="sql"><code><span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">CREATE</span><span style="color:#D73A49;--shiki-dark:#F97583"> TABLE</span><span style="color:#6F42C1;--shiki-dark:#B392F0"> events</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> (</span></span>
 <span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    event_id       UInt64,</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">    timestamp</span><span style="color:#24292E;--shiki-dark:#E1E4E8">      DateTime64(</span><span style="color:#005CC5;--shiki-dark:#79B8FF">3</span><span style="color:#24292E;--shiki-dark:#E1E4E8">, </span><span style="color:#032F62;--shiki-dark:#9ECBFF">'UTC'</span><span style="color:#24292E;--shiki-dark:#E1E4E8">),</span></span>
@@ -39,55 +40,26 @@
 <span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">    metadata   Map(String, String)</span></span>
 <span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">) ENGINE </span><span style="color:#D73A49;--shiki-dark:#F97583">=</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> MergeTree()</span></span>
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">ORDER BY</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> user_id;</span></span></code></pre>
-<p><strong>50 questions in 5 difficulty tiers</strong>, from “how many events are there?” (T1) up to window functions, <code>WITH FILL</code> and <code>argMax()</code> (T5). Tiers 1 and 2 are standard SQL; tiers 3 to 5 need ClickHouse-specific functions. Each model answers every question 3 times, zero-shot, temperature 0, seed 42, via OpenRouter. The prompt contains the full DDL, a short data description, and “Respond with ONLY the SQL query”.</p>
-<p>One documented flaw carried over from February: the prompt says “~100K users” but the data has ~10K. No question depends on user count, but it is a confound I keep disclosing rather than silently fixing, because fixing it would break comparability between the waves.</p>
-<h3 id="the-two-waves">The two waves</h3>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<table><thead><tr><th></th><th>February 2026</th><th>August 2026</th></tr></thead><tbody><tr><td>Models</td><td>8</td><td>14</td></tr><tr><td>Queries scored</td><td>1,200</td><td>2,100</td></tr><tr><td>ClickHouse</td><td>25.11</td><td>26.1</td></tr><tr><td>Access date</td><td>2026-02-12</td><td>2026-08-10</td></tr></tbody></table>
-<p>February lineup: Claude Opus 4.6, Claude Opus 4, Claude Sonnet 4.5, GPT-5.2, Kimi K2.5, DeepSeek V3.2, Gemini 3 Flash, MiniMax M2.5.</p>
-<p>August lineup: each February model’s successor (Claude Opus 5, Claude Sonnet 5, GPT-5.5, Gemini 3.5 Flash, DeepSeek V4-Pro, Kimi K3, MiniMax M3), plus DeepSeek V4-Flash and the entire GPT-5.6 series: Luna, Terra, Sol, each in base and pro.</p>
-<p>The February scores are kept as measured in February. Mixing measurement dates is a real limitation, and I flag it where it matters. All prices are OpenRouter list prices at the respective access date; Claude Sonnet 5 was at its introductory price in August.</p>
+<h3 id="questions">Questions</h3>
+<p>50 questions in 5 difficulty tiers. T1/T2 are standard SQL (SELECT, WHERE, GROUP BY). T3 requires ClickHouse-specific functions (<code>quantile()</code>, <code>mapContains()</code>, <code>has()</code>, <code>-If</code> combinators). T4 covers joins, CTEs and subqueries. T5 covers window functions, <code>WITH FILL</code>, <code>argMax()</code>, array lambdas.</p>
+<h3 id="protocol">Protocol</h3>
+<ul>
+<li>Zero-shot. The prompt contains the full DDL, a short data description, the question, and the instruction to respond with only the SQL query.</li>
+<li>Temperature 0, seed 42, 3 runs per question, all models accessed through OpenRouter.</li>
+<li>Known prompt flaw, kept for comparability across waves: the prompt states “~100K users”, the dataset has ~10K. No question depends on user cardinality.</li>
+</ul>
+<p>The 22 models were measured in two waves: 8 models in February 2026 (ClickHouse 25.11, prices as of 2026-02-12) and 14 models in August 2026 (ClickHouse 26.1, prices as of 2026-08-10, Claude Sonnet 5 at introductory pricing). Reference outputs are identical across versions except one reference query that needed a syntax fix on 26.1 (see Methodology notes). Cost figures use OpenRouter list prices from the respective measurement date.</p>
 <h3 id="scoring">Scoring</h3>
-<p>Each run gets a score: <strong>3</strong> if the query executes and its output matches the reference query’s output (with whitespace normalization, row sorting for unordered results, and 0.1% numeric tolerance), <strong>2</strong> if it executes but the output differs, <strong>1</strong> if it fails at runtime, <strong>0</strong> for syntax errors or API failures.</p>
-<p>Strict matching penalizes queries that are logically right but return different columns or formats. So every score-2 result gets classified into three buckets:</p>
+<p>Per run: <strong>3</strong> = executes, output matches the reference (whitespace normalization, row sorting for unordered results, 0.1% numeric tolerance). <strong>2</strong> = executes, output differs. <strong>1</strong> = runtime error. <strong>0</strong> = syntax error or API failure.</p>
+<p>Strict matching penalizes queries that are logically correct but return different columns or formats. Every score-2 run is therefore classified by re-executing both queries and comparing outputs structurally:</p>
 <ul>
-<li><strong>format_mismatch</strong>: right logic, different output format (row order, missing LIMIT, date type, approximate vs exact aggregate)</li>
-<li><strong>column_mismatch</strong>: right logic, different column selection (extra or missing columns)</li>
-<li><strong>logic_error</strong>: genuinely wrong SQL</li>
+<li><strong>format_mismatch</strong>: correct logic, different output format (row order, missing LIMIT, date type, approximate vs exact aggregate)</li>
+<li><strong>column_mismatch</strong>: correct logic, different column selection</li>
+<li><strong>logic_error</strong>: wrong SQL</li>
 </ul>
-<p>In February I classified all 396 score-2 results by hand. For this update I replaced the hand labels with an automated classifier that re-executes both queries and compares outputs structurally (row subsets for LIMIT differences, per-column multiset overlap for column selection, value tolerance for approximate aggregates). Validated against my February manual labels it agrees on 88% of rows, and where they disagree, spot checks mostly found the <em>manual</em> label at fault (one example below). Both waves in this article use the automated classification, so the numbers are computed by one uniform, reproducible method.</p>
-<p><strong>Adjusted accuracy</strong> counts format and column mismatches as correct: it measures “did the model understand the question”, while strict accuracy measures “would this drop into an automated pipeline unchanged”.</p>
+<p>The classifier is rule-based (row-subset detection for LIMIT differences, per-column multiset overlap for column selection, value tolerance for approximate aggregates). Validated against a manual classification of the February wave it agrees on 88% of rows; in the sampled disagreements the manual label was at fault more often than the rule (an example is in Methodology notes). Both waves are classified with the same rules.</p>
+<p>Two metrics follow: <strong>strict accuracy</strong> (score 3 only) and <strong>adjusted accuracy</strong> (score 3 plus format and column mismatches). Strict answers “does the output drop into an automated pipeline unchanged”; adjusted answers “is the SQL logically correct”.</p>
 <h2 id="results">Results</h2>
-<h3 id="august-2026-ranking">August 2026 ranking</h3>
 
 
 
@@ -213,58 +185,159 @@
 
 
 
-<table><thead><tr><th>Model</th><th align="center">Correct</th><th align="center">Strict</th><th align="center">Adjusted</th><th align="center">$/query</th><th align="center">$/correct</th></tr></thead><tbody><tr><td>Claude Opus 5</td><td align="center">111/150</td><td align="center"><strong>74.0%</strong></td><td align="center">95.3%</td><td align="center">$0.0057</td><td align="center">$0.0077</td></tr><tr><td>Claude Sonnet 5</td><td align="center">110/150</td><td align="center">73.3%</td><td align="center">94.0%</td><td align="center">$0.0021</td><td align="center">$0.0029</td></tr><tr><td>Kimi K3</td><td align="center">109/150</td><td align="center">72.7%</td><td align="center">94.0%</td><td align="center">$0.0043</td><td align="center">$0.0059</td></tr><tr><td>GPT-5.6-Terra</td><td align="center">107/150</td><td align="center">71.3%</td><td align="center">93.3%</td><td align="center">$0.0007</td><td align="center">$0.0009</td></tr><tr><td>GPT-5.6-Terra-Pro</td><td align="center">105/150</td><td align="center">70.0%</td><td align="center">94.7%</td><td align="center">$0.0046</td><td align="center">$0.0065</td></tr><tr><td>GPT-5.5</td><td align="center">104/150</td><td align="center">69.3%</td><td align="center">92.7%</td><td align="center">$0.0074</td><td align="center">$0.0107</td></tr><tr><td>Gemini 3.5 Flash</td><td align="center">103/150</td><td align="center">68.7%</td><td align="center">93.3%</td><td align="center">$0.0062</td><td align="center">$0.0090</td></tr><tr><td>DeepSeek V4-Pro</td><td align="center">102/150</td><td align="center">68.0%</td><td align="center">94.7%</td><td align="center">$0.0004</td><td align="center">$0.0006</td></tr><tr><td>MiniMax M3</td><td align="center">102/150</td><td align="center">68.0%</td><td align="center">90.0%</td><td align="center">$0.0005</td><td align="center">$0.0007</td></tr><tr><td>GPT-5.6-Luna</td><td align="center">99/150</td><td align="center">66.0%</td><td align="center">94.0%</td><td align="center">$0.0001</td><td align="center">$0.0002</td></tr><tr><td>GPT-5.6-Sol</td><td align="center">98/150</td><td align="center">65.3%</td><td align="center">90.7%</td><td align="center">$0.0037</td><td align="center">$0.0057</td></tr><tr><td>GPT-5.6-Luna-Pro</td><td align="center">97/150</td><td align="center">64.7%</td><td align="center">91.3%</td><td align="center">$0.0008</td><td align="center">$0.0012</td></tr><tr><td>GPT-5.6-Sol-Pro</td><td align="center">95/150</td><td align="center">63.3%</td><td align="center">89.3%</td><td align="center">$0.0239</td><td align="center">$0.0377</td></tr><tr><td>DeepSeek V4-Flash</td><td align="center">94/150</td><td align="center">62.7%</td><td align="center">92.0%</td><td align="center">$0.0001</td><td align="center">$0.0002</td></tr></tbody></table>
-<p>For reference, February’s ranking under the same classification method: Claude Opus 4.6 and Opus 4 at 72.0% strict (98.0% adjusted), Kimi K2.5 at 64.0%, Claude Sonnet 4.5 at 62.0%, MiniMax M2.5 at 61.3%, DeepSeek V3.2 and GPT-5.2 at 60.7%, Gemini 3 Flash at 60.0%.</p>
-<h3 id="six-months-of-progress">Six months of progress</h3>
-<p><img src="/images/exp03-generation-deltas.png" alt="Generation deltas: February vs August"></p>
-<p>Every family improved, but not evenly. Claude Sonnet made the biggest jump (+11.3 points) and now effectively ties Opus. The Opus tier itself barely moved (+2.0): it was already close to what strict scoring allows on this benchmark, since a large share of the remaining “failures” are format choices, not capability gaps.</p>
-<p><img src="/images/exp03-accuracy-heatmap.png" alt="Accuracy heatmap, both waves"></p>
-<p>The tier pattern from February survived intact: everything at T1, near-everything at T2, and a cliff at T3 where ClickHouse-specific functions start. The cliff just moved up a bit: T4 improved most visibly (Claude models at 73% vs 60% in February), and T5 stays the hardest, with nobody above 43%.</p>
-<h3 id="strict-vs-adjusted-the-gap-is-the-story">Strict vs adjusted: the gap is the story</h3>
-<p><img src="/images/exp03-strict-vs-adjusted.png" alt="Strict vs adjusted accuracy, August wave"></p>
-<p>Of August’s 623 score-2 results, the classifier labels 270 format mismatches, 243 column mismatches, and only 110 genuine logic errors. That is 110 truly wrong queries out of 2,100, or 5.2%. The picture from February holds: <strong>models rarely write wrong SQL for these questions; they mostly make different, defensible choices about what to return.</strong> Adjusted accuracy compresses the whole field into the 89 to 95% band, which means the strict-accuracy ranking is largely a ranking of “who guesses my output format”, not “who knows ClickHouse”.</p>
-<p>If you take one thing from this article for production text-to-SQL: specify the expected output columns and format in the prompt. It is worth more than a model upgrade.</p>
-<h3 id="cost">Cost</h3>
-<p><img src="/images/exp03-cost-efficiency.png" alt="Cost vs accuracy, both waves"></p>
-<p>The cost-per-correct-query spread is a factor of about 240 within the August wave alone: GPT-5.6-Luna at $0.0002 and DeepSeek V4-Flash at $0.00016 on one end, GPT-5.6-Sol-Pro at $0.038 on the other. Luna answers two thirds of the questions correctly at a fifth of a cent per correct query, and over 90% correct by adjusted accuracy. For a pipeline with retry logic, the cheap end of this chart is very hard to argue against.</p>
-<p>The strangest data points are the GPT-5.6 pro variants. Same list price as their base models, consistently lower strict accuracy (Terra 71.3 vs Terra-Pro 70.0, Luna 66.0 vs 64.7, Sol 65.3 vs 63.3), and Sol-Pro’s longer answers made it the most expensive model in the entire eval per correct query. Whatever “pro” optimizes for, it is not one-shot SQL generation. Also note the tier inversion: mid-tier Terra beats flagship Sol by 6 points.</p>
-<h2 id="what-changed-what-didnt">What changed, what didn’t</h2>
-<p>In February, 13 of the 50 questions had 0% strict accuracy across all 8 models. In August, 11 of those 13 remain essentially at zero (none above 7%), and the classifier says they are what they were in February: format and column-selection artifacts, where every model makes a reasonable choice that differs from my reference.</p>
-<p>Two questions genuinely flipped:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Model</th><th align="center">Tested</th><th align="center">Strict</th><th align="center">Adjusted</th><th align="center">$/query</th><th align="center">$/correct</th></tr></thead><tbody><tr><td>Claude Opus 5</td><td align="center">Aug</td><td align="center"><strong>74.0%</strong></td><td align="center">95.3%</td><td align="center">$0.0057</td><td align="center">$0.0077</td></tr><tr><td>Claude Sonnet 5</td><td align="center">Aug</td><td align="center">73.3%</td><td align="center">94.0%</td><td align="center">$0.0021</td><td align="center">$0.0029</td></tr><tr><td>Kimi K3</td><td align="center">Aug</td><td align="center">72.7%</td><td align="center">94.0%</td><td align="center">$0.0043</td><td align="center">$0.0059</td></tr><tr><td>Claude Opus 4.6</td><td align="center">Feb</td><td align="center">72.0%</td><td align="center">98.0%</td><td align="center">$0.0108</td><td align="center">$0.0150</td></tr><tr><td>Claude Opus 4</td><td align="center">Feb</td><td align="center">72.0%</td><td align="center">98.0%</td><td align="center">$0.0108</td><td align="center">$0.0149</td></tr><tr><td>GPT-5.6-Terra</td><td align="center">Aug</td><td align="center">71.3%</td><td align="center">93.3%</td><td align="center">$0.0007</td><td align="center">$0.0009</td></tr><tr><td>GPT-5.6-Terra-Pro</td><td align="center">Aug</td><td align="center">70.0%</td><td align="center">94.7%</td><td align="center">$0.0046</td><td align="center">$0.0065</td></tr><tr><td>GPT-5.5</td><td align="center">Aug</td><td align="center">69.3%</td><td align="center">92.7%</td><td align="center">$0.0074</td><td align="center">$0.0107</td></tr><tr><td>Gemini 3.5 Flash</td><td align="center">Aug</td><td align="center">68.7%</td><td align="center">93.3%</td><td align="center">$0.0062</td><td align="center">$0.0090</td></tr><tr><td>DeepSeek V4-Pro</td><td align="center">Aug</td><td align="center">68.0%</td><td align="center">94.7%</td><td align="center">$0.0004</td><td align="center">$0.0006</td></tr><tr><td>MiniMax M3</td><td align="center">Aug</td><td align="center">68.0%</td><td align="center">90.0%</td><td align="center">$0.0005</td><td align="center">$0.0007</td></tr><tr><td>GPT-5.6-Luna</td><td align="center">Aug</td><td align="center">66.0%</td><td align="center">94.0%</td><td align="center">$0.0001</td><td align="center">$0.0002</td></tr><tr><td>GPT-5.6-Sol</td><td align="center">Aug</td><td align="center">65.3%</td><td align="center">90.7%</td><td align="center">$0.0037</td><td align="center">$0.0057</td></tr><tr><td>GPT-5.6-Luna-Pro</td><td align="center">Aug</td><td align="center">64.7%</td><td align="center">91.3%</td><td align="center">$0.0008</td><td align="center">$0.0012</td></tr><tr><td>Kimi K2.5</td><td align="center">Feb</td><td align="center">64.0%</td><td align="center">92.0%</td><td align="center">$0.0025</td><td align="center">$0.0039</td></tr><tr><td>GPT-5.6-Sol-Pro</td><td align="center">Aug</td><td align="center">63.3%</td><td align="center">89.3%</td><td align="center">$0.0239</td><td align="center">$0.0377</td></tr><tr><td>DeepSeek V4-Flash</td><td align="center">Aug</td><td align="center">62.7%</td><td align="center">92.0%</td><td align="center">$0.0001</td><td align="center">$0.0002</td></tr><tr><td>Claude Sonnet 4.5</td><td align="center">Feb</td><td align="center">62.0%</td><td align="center">98.0%</td><td align="center">$0.0022</td><td align="center">$0.0035</td></tr><tr><td>MiniMax M2.5</td><td align="center">Feb</td><td align="center">61.3%</td><td align="center">90.0%</td><td align="center">$0.0007</td><td align="center">$0.0011</td></tr><tr><td>DeepSeek V3.2</td><td align="center">Feb</td><td align="center">60.7%</td><td align="center">88.7%</td><td align="center">$0.0002</td><td align="center">$0.0003</td></tr><tr><td>GPT-5.2</td><td align="center">Feb</td><td align="center">60.7%</td><td align="center">86.7%</td><td align="center">$0.0013</td><td align="center">$0.0021</td></tr><tr><td>Gemini 3 Flash</td><td align="center">Feb</td><td align="center">60.0%</td><td align="center">90.0%</td><td align="center">$0.0001</td><td align="center">$0.0002</td></tr></tbody></table>
+<p>150 runs per model (50 questions × 3). One run is 0.67 percentage points; differences of one or two points are within noise (see Limitations).</p>
+<h3 id="accuracy-by-difficulty-tier">Accuracy by difficulty tier</h3>
+<p><img src="/images/exp03-accuracy-heatmap.png" alt="Accuracy heatmap, all models"></p>
+<p>The tier structure is consistent across all 22 models: T1 is at or near 100% everywhere, T2 at 80 to 100%, and accuracy drops sharply at T3 where dialect-specific functions begin. T5 is hardest for every model; no model exceeds 43%. The differentiator between models is dialect knowledge, not SQL in general.</p>
+<h3 id="cost-vs-performance">Cost vs performance</h3>
+<p><img src="/images/exp03-cost-efficiency.png" alt="Cost per correct query vs strict accuracy"></p>
+<p>The vertical spread at any given cost level is the notable feature of this chart. Within the August wave:</p>
 <ul>
-<li><strong>t5_06, <code>WITH FILL</code>: 0% to 93%.</strong> In February, models guessed at this ClickHouse-only syntax and mostly got it wrong. The August generation writes it correctly almost every time. This is the clearest real capability gain in the rerun.</li>
-<li><strong>t4_10, CTE + tuple subquery: 0% to 88%.</strong> Same story for tuple-<code>IN</code>-subquery patterns.</li>
+<li><strong>GPT-5.6-Luna ($0.10/M in, $0.60/M out)</strong> reaches 66.0% strict / 94.0% adjusted at $0.0002 per correct query.</li>
+<li><strong>DeepSeek V4-Flash ($0.08/M in)</strong> reaches 62.7% / 92.0% at $0.00016 per correct query, the lowest in the field.</li>
+<li><strong>Claude Sonnet 5</strong> delivers 73.3% at $0.0029 per correct query; Claude Opus 5 adds 0.7 points for 2.7× that.</li>
+<li><strong>GPT-5.6-Sol-Pro</strong> combines the second-lowest August strict accuracy with by far the highest cost ($0.038 per correct query, driven by long outputs at $30/M).</li>
 </ul>
-<p>And two questions still fool everything with a model number:</p>
+<p>The pro variants of the GPT-5.6 series are priced identically to their base variants and scored lower in all three tiers (Terra 71.3 vs Terra-Pro 70.0, Luna 66.0 vs 64.7, Sol 65.3 vs 63.3). The mid-tier Terra also scored above the flagship Sol by 6 points. For this workload, neither the “pro” designation nor the price tier is a useful accuracy signal within that family.</p>
+<p>For a pipeline that can validate and retry, the cost-efficient end of the field changes the calculus: at $0.0002 per correct query, five retries of a budget model cost 2% of a single flagship attempt.</p>
+<h3 id="what-the-failures-are">What the failures are</h3>
+<p><img src="/images/exp03-strict-vs-adjusted.png" alt="Strict vs adjusted accuracy"></p>
+<p>August wave, 2,100 runs: 1,436 correct (68.4%), 623 wrong result, 38 runtime errors, 3 syntax or API errors. Classification of the 623 wrong results:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Classification</th><th align="right">Count</th><th align="right">Share of runs</th></tr></thead><tbody><tr><td>format_mismatch</td><td align="right">270</td><td align="right">12.9%</td></tr><tr><td>column_mismatch</td><td align="right">243</td><td align="right">11.6%</td></tr><tr><td>logic_error</td><td align="right">110</td><td align="right">5.2%</td></tr></tbody></table>
+<p>The February wave has the same structure (184 format, 159 column, 53 logic out of 1,200 runs). In both waves, the large majority of “wrong” results are queries whose filtering, aggregation and join logic is correct but which return different columns, different row ordering, or a different value format than the reference.</p>
+<p>Consequences:</p>
 <ul>
-<li><strong>t5_07</strong>: “collect all event types per user into a sorted array”. The reference deduplicates (<code>groupArray(DISTINCT ...)</code>); most models return duplicates. 0/42 in August, and the failures are genuine logic errors, not formatting.</li>
-<li><strong>t5_10</strong>: tag matching where the reference treats “premium” as a substring (<code>LIKE '%premium%'</code>) but every model matches exactly. Arguably an ambiguous question, and after 66 failed attempts across two generations I lean toward blaming my question more than the models.</li>
+<li>The strict ranking above partly measures “which model guesses the reference’s output conventions”. The 20 to 30 point strict-adjusted gap is consistent across every model.</li>
+<li>For production text-to-SQL, specifying the expected output columns, ordering and LIMIT in the prompt recovers most of that gap. This has a larger effect than any model choice in this table.</li>
 </ul>
-<h2 id="two-corrections-to-the-february-article">Two corrections to the February article</h2>
-<p>Being honest about these matters more to me than the rankings.</p>
-<p><strong>My reference SQL broke on a ClickHouse upgrade.</strong> The February reference for the <code>WITH FILL</code> question used string literals: <code>WITH FILL FROM '2024-01-01'</code>. ClickHouse 25.11 accepted that; 26.1 requires typed constants (<code>toDate('2024-01-01')</code>) and rejects the query. My first August scoring pass compared every answer against a reference that no longer executed, and silently marked 40 correct answers wrong. The benchmark author fell into the same dialect-drift trap the benchmark measures. The published scores use the fixed, version-portable reference.</p>
-<p><strong>My manual classification had errors.</strong> The February draft claimed that all 8 models made the same logic error on t5_07 by forgetting to deduplicate. Re-checking the actual responses shows 4 of the 8 deduplicated correctly (via <code>groupUniqArray</code> or <code>arrayDistinct</code>) and only differed in a missing <code>LIMIT</code> or an extra column. Half of that “universal logic error” was my labeling, not their SQL. The automated classifier caught this, which is why both waves now use it, and why the per-model adjusted numbers for February differ slightly from what my draft said (Claude models 98% rather than 96%, GPT-5.2 86.7% rather than 90%).</p>
-<h2 id="which-model-should-write-your-clickhouse-sql">Which model should write your ClickHouse SQL?</h2>
+<h3 id="persistently-failed-questions">Persistently failed questions</h3>
+<p>13 of the 50 questions had 0% strict accuracy across all February models. Under the August wave, 11 of the 13 remain at or near zero, and the classifier attributes them to format and column-selection differences rather than wrong logic. Two changed:</p>
 <ul>
-<li><strong>Best accuracy, price no object:</strong> Claude Opus 5, but the honest answer is that its lead over Claude Sonnet 5 is a single run out of 150, and Sonnet costs a third as much.</li>
-<li><strong>Best value in the top group:</strong> Claude Sonnet 5 or GPT-5.6-Terra. Terra gets within 3 points of Opus 5 at an eighth of the cost per correct query.</li>
-<li><strong>Pipelines with retries:</strong> GPT-5.6-Luna or DeepSeek V4-Flash. At $0.0002 per correct query you can retry five times and still be an order of magnitude cheaper than a single flagship shot.</li>
-<li><strong>Skip the pro variants</strong> for this workload. Same price, less accuracy, and in Sol-Pro’s case much higher output-token bills.</li>
-<li><strong>Whatever you pick:</strong> put the expected output format in the prompt. The strict-adjusted gap (20 to 30 points for every model) is mostly recoverable with explicit instructions about columns, ordering and LIMIT.</li>
+<li><strong>t5_06 (<code>WITH FILL</code>)</strong>: 0% in February, 93% in August. The February models did not know this ClickHouse-only syntax; the August models do. This is the clearest genuine capability difference between the waves.</li>
+<li><strong>t4_10 (CTE + tuple subquery)</strong>: 0% to 88%, same pattern.</li>
 </ul>
+<p>Two questions are failed by all 22 models across both waves:</p>
+<ul>
+<li><strong>t5_07</strong>: “collect all event types per user into a sorted array”. The reference deduplicates; most models return duplicates. These are genuine logic errors.</li>
+<li><strong>t5_10</strong>: tag matching where the reference uses a substring match (<code>LIKE '%premium%'</code>) and every model uses exact matching. The question wording (“with tag ‘premium’”) does not clearly imply substring semantics; this is at least partly a question defect.</li>
+</ul>
+<h2 id="methodology-notes">Methodology notes</h2>
+<p>Three items surfaced while preparing this report. All three affect published numbers and are part of why the raw data is public.</p>
+<p><strong>Reference SQL is itself subject to dialect drift.</strong> The February reference for t5_06 used <code>WITH FILL FROM '2024-01-01'</code> with string literals. ClickHouse 25.11 accepted this; 26.1 requires typed constants and rejects the query. The first August scoring pass compared answers against a failing reference and marked 40 correct runs wrong. The published scores use a version-portable reference (<code>toDate('2024-01-01')</code>), which produces identical output on both versions.</p>
+<p><strong>The manual failure classification contained errors.</strong> An earlier draft of this evaluation claimed all 8 February models made the same logic error on t5_07 by failing to deduplicate. The response data shows 4 of the 8 deduplicated correctly (<code>groupUniqArray</code>, <code>arrayDistinct</code>) and differed only in a missing LIMIT or extra columns. The automated classifier caught the discrepancy; the manual labels did not. This motivated replacing manual classification with the rule-based classifier for both waves.</p>
+<p><strong>Measurement dates differ between waves.</strong> February models were measured 2026-02-12 on ClickHouse 25.11; August models 2026-08-10 on 26.1.2. Provider-side model updates between those dates are not observable through the API. Comparisons across waves (for instance, successor models scoring 2 to 11 points above their February counterparts) should be read with that caveat; comparisons within a wave are clean.</p>
+<h2 id="model-choice">Model choice</h2>
+<p>Read from the table, for this workload:</p>
+<ul>
+<li><strong>Highest accuracy</strong>: Claude Opus 5, with Claude Sonnet 5 one run behind at roughly a third of the cost per correct query.</li>
+<li><strong>Accuracy per dollar in the upper group</strong>: GPT-5.6-Terra, within 3 points of the leader at an eighth of its cost per correct query.</li>
+<li><strong>High-volume pipelines with validation and retry</strong>: GPT-5.6-Luna or DeepSeek V4-Flash.</li>
+<li>The GPT-5.6 pro variants are not competitive on this task at any budget.</li>
+</ul>
+<p>Independent of model choice: constrain the output format in the prompt. The data shows format and column-selection divergence, not SQL capability, is the dominant failure mode for every model tested.</p>
 <h2 id="limitations">Limitations</h2>
 <ol>
-<li><strong>The two waves were measured six months apart</strong> on different ClickHouse versions (25.11 vs 26.1) with prices from their respective dates. Deterministic data generation keeps the reference results identical, but provider-side model updates within a wave are invisible to me.</li>
-<li><strong>Strict scoring measures format matching as much as capability.</strong> That is why adjusted accuracy is reported everywhere. The classifier that computes it agrees with my manual labels on 88% of February rows; the disagreements cut both ways and a residual gray zone (is an hour returned as <code>0..23</code> instead of a timestamp a format choice or an error?) remains judgment.</li>
-<li><strong>50 questions, 3 runs.</strong> One question is 2 percentage points of strict accuracy. Ranking neighbors within a couple of points should be read as ties.</li>
-<li><strong>Zero-shot only.</strong> Few-shot examples of ClickHouse idioms would likely close part of the T3+ gap for every model.</li>
-<li><strong>Small dataset</strong> (1M rows). The February query-performance analysis found LLM queries essentially as fast as hand-written references (median speedup 1.0×); I did not rerun it for August.</li>
-<li><strong>The prompt says ~100K users; the data has ~10K.</strong> Documented confound, kept for comparability.</li>
+<li><strong>Sample size.</strong> 50 questions × 3 runs. One question is 2 points of strict accuracy; adjacent table rows are statistical ties.</li>
+<li><strong>Strict scoring conflates format matching with capability.</strong> Quantified via the classification, but the classifier itself has a gray zone (for example, an hour-of-day returned as an integer instead of a timestamp), and its 88% agreement with manual labels bounds the precision of the adjusted numbers.</li>
+<li><strong>Two measurement dates, two ClickHouse versions.</strong> Within-wave comparisons are clean; cross-wave comparisons carry the caveats above.</li>
+<li><strong>Zero-shot only.</strong> Few-shot prompting with dialect examples would likely raise all T3+ scores.</li>
+<li><strong>Small dataset.</strong> 1M rows. A February side-analysis found LLM-generated queries perform at parity with hand-written references (median speedup 1.0×); not re-measured in August.</li>
+<li><strong>Synthetic questions and data</strong>, not calibrated against Spider/BIRD or production query logs.</li>
 </ol>
 <h2 id="data">Data</h2>
-<p>Everything is in <a href="https://github.com/comino/blog-experiments/tree/main/03">comino/blog-experiments/03</a>: the 50 questions with reference SQL, all 3,300 scored runs (<code>scores.csv</code>, <code>scores_v2.csv</code>), the classifier and its validation against the manual labels, per-model response JSONs including raw API responses, and the chart-generation scripts.</p>
+<p><a href="https://github.com/comino/blog-experiments/tree/main/03">comino/blog-experiments/03</a>: 50 questions with reference SQL, all 3,300 scored runs, per-model response JSONs with raw API payloads, the classifier with its validation against the manual labels, and chart-generation scripts.</p>
 <hr>
-<p><em>50 questions × 3 runs, zero-shot, temperature 0, seed 42, via OpenRouter. February wave: 8 models on ClickHouse 25.11, accessed 2026-02-12. August wave: 14 models on ClickHouse 26.1.2, accessed 2026-08-10. Evaluation on Hetzner CX53.</em></p> <hr data-astro-cid-yvbahnfj> <p class="meta" data-astro-cid-yvbahnfj>
+<p><em>50 questions × 3 runs per model, zero-shot, temperature 0, seed 42, via OpenRouter. February wave: 8 models, ClickHouse 25.11, 2026-02-12. August wave: 14 models, ClickHouse 26.1.2, 2026-08-10. Evaluated on Hetzner CX53.</em></p> <hr data-astro-cid-yvbahnfj> <p class="meta" data-astro-cid-yvbahnfj>
 Questions, corrections, or a consulting project?
 <a href="mailto:mail@sveneliasson.de" data-astro-cid-yvbahnfj>Mail me</a> or find me on
 <a href="https://github.com/comino" data-astro-cid-yvbahnfj>GitHub</a>.
