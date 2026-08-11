@@ -1,14 +1,15 @@
 <!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Can LLMs Write ClickHouse SQL? A Zero-Shot Benchmark of 22 Models</title><meta name="description" content="22 LLMs generate ClickHouse SQL for 50 questions, zero-shot. Strict and adjusted accuracy, cost per correct query, failure classification, and the limits of output-matching benchmarks."><link rel="canonical" href="https://sveneliasson.de/can-llms-write-clickhouse-sql-zero-shot-evaluation/"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><meta property="og:title" content="Can LLMs Write ClickHouse SQL? A Zero-Shot Benchmark of 22 Models"><meta property="og:description" content="22 LLMs generate ClickHouse SQL for 50 questions, zero-shot. Strict and adjusted accuracy, cost per correct query, failure classification, and the limits of output-matching benchmarks."><meta property="og:type" content="article"><meta property="og:url" content="https://sveneliasson.de/can-llms-write-clickhouse-sql-zero-shot-evaluation/"><meta property="og:image" content="https://sveneliasson.de/images/exp03-cost-efficiency.png"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="https://sveneliasson.de/images/exp03-cost-efficiency.png"><link rel="alternate" type="application/rss+xml" title="Sven Eliasson" href="/rss.xml"><link rel="sitemap" href="/sitemap-index.xml"><link rel="stylesheet" href="/_astro/_slug_.RFOjj78o.css">
 <style>.post-header[data-astro-cid-yvbahnfj]{margin-bottom:2rem}.back[data-astro-cid-yvbahnfj]{margin-right:.5rem}.cover[data-astro-cid-yvbahnfj]{display:block;width:100%;aspect-ratio:2 / 1;object-fit:cover;margin:0 0 2.2rem}
-</style></head> <body> <header class="site"> <div class="wrap"> <a href="/" class="brand"><span class="prompt">~$</span> sven.eliasson</a> <nav> <a href="/">writing</a> <a href="/about/">about</a> <a href="/rss.xml">rss</a> </nav> </div> </header> <main class="wrap">  <article data-astro-cid-yvbahnfj> <header class="post-header" data-astro-cid-yvbahnfj> <p class="meta" data-astro-cid-yvbahnfj> <a href="/" class="back" data-astro-cid-yvbahnfj>←</a> 11 Aug 2026 · 10 min read
+</style></head> <body> <header class="site"> <div class="wrap"> <a href="/" class="brand"><span class="prompt">~$</span> sven.eliasson</a> <nav> <a href="/">writing</a> <a href="/about/">about</a> <a href="/rss.xml">rss</a> </nav> </div> </header> <main class="wrap">  <article data-astro-cid-yvbahnfj> <header class="post-header" data-astro-cid-yvbahnfj> <p class="meta" data-astro-cid-yvbahnfj> <a href="/" class="back" data-astro-cid-yvbahnfj>←</a> 11 Aug 2026 · 13 min read
 </p> <h1 data-astro-cid-yvbahnfj>Can LLMs Write ClickHouse SQL? A Zero-Shot Benchmark of 22 Models</h1> <ul class="chips" aria-label="Tags" data-astro-cid-yvbahnfj> <li class="chip" data-astro-cid-yvbahnfj>clickhouse</li><li class="chip" data-astro-cid-yvbahnfj>llm</li><li class="chip" data-astro-cid-yvbahnfj>sql</li><li class="chip" data-astro-cid-yvbahnfj>benchmark</li> </ul> </header> <img class="cover" src="/images/exp03-cost-efficiency.png" alt="" loading="eager" data-astro-cid-yvbahnfj> <p>ClickHouse SQL deviates from standard SQL in ways that matter for text-to-SQL: <code>quantile()</code>, <code>arrayJoin()</code>, <code>-If</code> combinators, <code>WITH FILL</code>, map and array functions. This benchmark measures how well current LLMs handle the dialect in the hardest setting: zero-shot, one attempt, no examples.</p>
-<p>22 models, 50 questions, 3 runs per question, 3,300 scored queries total. Each generated query is executed against a live ClickHouse database and its output compared to a hand-written reference query.</p>
+<p>22 models, 60 questions (50 across five tiers, plus a harder sixth tier added later), 3 runs per question, 3,960 scored queries total. Each generated query is executed against a live ClickHouse database and its output compared to a hand-written reference query.</p>
 <p>Key results:</p>
 <ol>
 <li><strong>Strict accuracy ranges from 60.0% to 74.0%.</strong> Claude Opus 5 leads at 74.0%, followed by Claude Sonnet 5 (73.3%) and Kimi K3 (72.7%). The whole field sits within 14 points.</li>
 <li><strong>Most failures are not wrong SQL.</strong> Classifying every failed run: 82% of wrong-result queries in the August wave (87% in February) have correct logic and differ from the reference only in output format or column selection. Genuine logic errors are 5.2% of all runs in the most recent wave. Adjusted for this, accuracy ranges from 86.7% to 95.3%.</li>
 <li><strong>Cost per correct query spans a factor of ~240</strong> within the current lineup: $0.00016 (DeepSeek V4-Flash) to $0.038 (GPT-5.6-Sol-Pro).</li>
-<li><strong>Price does not predict accuracy.</strong> GPT-5.6-Terra ($1/M input) scores higher than both GPT-5.5 and GPT-5.6-Sol ($5/M each). All three GPT-5.6 pro variants score lower on strict accuracy than their same-priced base models.</li>
+<li><strong>Price does not predict accuracy.</strong> GPT-5.6-Terra ($1/M input) scores higher than both GPT-5.5 and GPT-5.6-Sol ($5/M each) on the main tiers. The same-priced GPT-5.6 pro variants score lower there, but higher on the hardest tier; see T6.</li>
+<li><strong>A harder sixth tier separates the leaders.</strong> On 10 additional questions covering <code>windowFunnel</code>, ASOF JOIN, <code>sequenceMatch</code> and similar functions, Claude Opus 5 reaches 90% while Claude Sonnet 5, tied with it on T1-T5, drops to 67%. One engine quirk (<code>windowFunnel</code> rejecting <code>DateTime64</code> arguments) fails 62 of 66 runs on its own.</li>
 </ol>
 <p>Data, scripts and charts: <a href="https://github.com/comino/blog-experiments/tree/main/03">comino/blog-experiments/03</a>.</p>
 <h2 id="setup">Setup</h2>
@@ -42,6 +43,7 @@
 <span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">ORDER BY</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> user_id;</span></span></code></pre>
 <h3 id="questions">Questions</h3>
 <p>50 questions in 5 difficulty tiers. T1/T2 are standard SQL (SELECT, WHERE, GROUP BY). T3 requires ClickHouse-specific functions (<code>quantile()</code>, <code>mapContains()</code>, <code>has()</code>, <code>-If</code> combinators). T4 covers joins, CTEs and subqueries. T5 covers window functions, <code>WITH FILL</code>, <code>argMax()</code>, array lambdas.</p>
+<p>A sixth tier of 10 questions was added on 2026-08-11 and run against all 22 models on that date: <code>windowFunnel</code>, <code>retention</code>, time-constrained <code>sequenceMatch</code>, ASOF JOIN, <code>LIMIT BY</code>, <code>WITH FILL ... INTERPOLATE</code>, the <code>-Resample</code> combinator, <code>arrayCumSum</code>, stacked combinators (<code>argMaxIf</code>), and <code>mapKeys</code> with <code>ARRAY JOIN</code>. T6 differs from T1-T5 in one deliberate way: every question specifies the exact output columns, ordering and row count, so strict scoring is not diluted by format choices. Every T6 reference query was validated for determinism and discriminative answers on the live database before any model saw it.</p>
 <h3 id="protocol">Protocol</h3>
 <ul>
 <li>Zero-shot. The prompt contains the full DDL, a short data description, the question, and the instruction to respond with only the SQL query.</li>
@@ -311,6 +313,138 @@
 <li><strong>t5_07</strong>: “collect all event types per user into a sorted array”. The reference deduplicates; most models return duplicates. These are genuine logic errors.</li>
 <li><strong>t5_10</strong>: tag matching where the reference uses a substring match (<code>LIKE '%premium%'</code>) and every model uses exact matching. The question wording (“with tag ‘premium’”) does not clearly imply substring semantics; this is at least partly a question defect.</li>
 </ul>
+<h3 id="tier-6-harder-tasks-explicit-output-contracts">Tier 6: harder tasks, explicit output contracts</h3>
+<p>All 22 models, 10 questions, 3 runs, measured 2026-08-11 on ClickHouse 26.1. With only 30 runs per model, one question is 3.3 points; treat small differences as noise.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Model</th><th align="center">T6 strict</th><th align="center">T6 adjusted</th></tr></thead><tbody><tr><td>Claude Opus 5</td><td align="center"><strong>90.0%</strong></td><td align="center">93.3%</td></tr><tr><td>Gemini 3.5 Flash</td><td align="center">83.3%</td><td align="center">83.3%</td></tr><tr><td>GPT-5.6-Sol-Pro</td><td align="center">83.3%</td><td align="center">83.3%</td></tr><tr><td>Kimi K3</td><td align="center">83.3%</td><td align="center">83.3%</td></tr><tr><td>Claude Opus 4.6</td><td align="center">80.0%</td><td align="center">80.0%</td></tr><tr><td>GPT-5.6-Sol</td><td align="center">73.3%</td><td align="center">73.3%</td></tr><tr><td>GPT-5.6-Terra-Pro</td><td align="center">73.3%</td><td align="center">73.3%</td></tr><tr><td>GPT-5.5</td><td align="center">70.0%</td><td align="center">70.0%</td></tr><tr><td>GPT-5.6-Terra</td><td align="center">70.0%</td><td align="center">70.0%</td></tr><tr><td>Claude Sonnet 5</td><td align="center">66.7%</td><td align="center">66.7%</td></tr><tr><td>GPT-5.6-Luna</td><td align="center">66.7%</td><td align="center">66.7%</td></tr><tr><td>Kimi K2.5</td><td align="center">66.7%</td><td align="center">66.7%</td></tr><tr><td>GPT-5.2</td><td align="center">63.3%</td><td align="center">70.0%</td></tr><tr><td>Claude Opus 4</td><td align="center">60.0%</td><td align="center">70.0%</td></tr><tr><td>Claude Sonnet 4.5</td><td align="center">60.0%</td><td align="center">60.0%</td></tr><tr><td>DeepSeek V4-Flash</td><td align="center">60.0%</td><td align="center">60.0%</td></tr><tr><td>GPT-5.6-Luna-Pro</td><td align="center">60.0%</td><td align="center">63.3%</td></tr><tr><td>MiniMax M3</td><td align="center">56.7%</td><td align="center">56.7%</td></tr><tr><td>DeepSeek V4-Pro</td><td align="center">53.3%</td><td align="center">60.0%</td></tr><tr><td>Gemini 3 Flash</td><td align="center">53.3%</td><td align="center">53.3%</td></tr><tr><td>DeepSeek V3.2</td><td align="center">46.7%</td><td align="center">56.7%</td></tr><tr><td>MiniMax M2.5</td><td align="center">46.7%</td><td align="center">50.0%</td></tr></tbody></table>
+<p>Observations:</p>
+<ul>
+<li><strong>The T1-T5 tie at the top breaks.</strong> Claude Opus 5 and Claude Sonnet 5 are separated by one run on the main tiers; on T6 the gap is 23 points. T6 is where model differences actually show.</li>
+<li><strong>The failure profile inverts.</strong> On T1-T5, wrong-but-executing results dominate (31% of runs) and runtime errors are rare (2.0%). On T6, runtime errors dominate (21.8% of runs) and wrong results drop to 6.5%. With output format pinned down and functions this specific, queries either work or fail loudly.</li>
+<li><strong>Explicit output contracts eliminate the strict-adjusted gap.</strong> T6’s gap is 0 to 10 points per model, versus 20 to 30 points on T1-T5. This quantifies the earlier recommendation: specifying output columns and ordering in the prompt converts strict accuracy into a capability measurement.</li>
+<li><strong>The pro variants reverse on hard tasks.</strong> GPT-5.6-Sol-Pro scores 10 points above Sol on T6 (83.3 vs 73.3) after scoring 2 points below it on T1-T5; Terra-Pro similarly gains on Terra. Whatever additional computation “pro” buys appears to matter only above a difficulty threshold. Luna-Pro is the exception (60.0 vs 66.7).</li>
+<li><strong>Two functions are nearly universal blind spots.</strong> <code>windowFunnel</code> requires plain <code>DateTime</code>, not <code>DateTime64</code>; 62 of 66 runs fail with the same type error because they pass <code>timestamp</code> uncast. Only Claude Opus 5 and, curiously, February’s GPT-5.2 produced the cast. <code>sequenceMatch</code> with a time condition fails 54 of 66 runs the same way.</li>
+<li><strong>ASOF JOIN, <code>LIMIT BY</code>, <code>argMaxIf</code> and <code>mapKeys</code> are essentially solved</strong> (97 to 98% across all models). The hard part of T6 is the funnel/sequence family and <code>INTERPOLATE</code>, not the join or array surface.</li>
+</ul>
 <h2 id="methodology-notes">Methodology notes</h2>
 <p>Three items surfaced while preparing this report. All three affect published numbers and are part of why the raw data is public.</p>
 <p><strong>Reference SQL is itself subject to dialect drift.</strong> The February reference for t5_06 used <code>WITH FILL FROM '2024-01-01'</code> with string literals. ClickHouse 25.11 accepted this; 26.1 requires typed constants and rejects the query. The first August scoring pass compared answers against a failing reference and marked 40 correct runs wrong. The published scores use a version-portable reference (<code>toDate('2024-01-01')</code>), which produces identical output on both versions.</p>
@@ -319,7 +453,7 @@
 <h2 id="model-choice">Model choice</h2>
 <p>Read from the table, for this workload:</p>
 <ul>
-<li><strong>Highest accuracy</strong>: Claude Opus 5, with Claude Sonnet 5 one run behind at roughly a third of the cost per correct query.</li>
+<li><strong>Highest accuracy</strong>: Claude Opus 5. On the main tiers Claude Sonnet 5 is one run behind at roughly a third of the cost per correct query, but on the harder T6 set Opus 5 leads Sonnet 5 by 23 points; for funnel/sequence-style analytical SQL the premium is justified.</li>
 <li><strong>Accuracy per dollar in the upper group</strong>: GPT-5.6-Terra, within 3 points of the leader at an eighth of its cost per correct query.</li>
 <li><strong>High-volume pipelines with validation and retry</strong>: GPT-5.6-Luna or DeepSeek V4-Flash.</li>
 <li>The GPT-5.6 pro variants are not competitive on this task at any budget.</li>
@@ -327,7 +461,7 @@
 <p>Independent of model choice: constrain the output format in the prompt. The data shows format and column-selection divergence, not SQL capability, is the dominant failure mode for every model tested.</p>
 <h2 id="limitations">Limitations</h2>
 <ol>
-<li><strong>Sample size.</strong> 50 questions × 3 runs. One question is 2 points of strict accuracy; adjacent table rows are statistical ties.</li>
+<li><strong>Sample size.</strong> 50 questions × 3 runs on the main tiers (one question = 2 points); 10 × 3 on T6 (one question = 3.3 points). Adjacent table rows are statistical ties.</li>
 <li><strong>Strict scoring conflates format matching with capability.</strong> Quantified via the classification, but the classifier itself has a gray zone (for example, an hour-of-day returned as an integer instead of a timestamp), and its 88% agreement with manual labels bounds the precision of the adjusted numbers.</li>
 <li><strong>Two measurement dates, two ClickHouse versions.</strong> Within-wave comparisons are clean; cross-wave comparisons carry the caveats above.</li>
 <li><strong>Zero-shot only.</strong> Few-shot prompting with dialect examples would likely raise all T3+ scores.</li>
@@ -335,9 +469,9 @@
 <li><strong>Synthetic questions and data</strong>, not calibrated against Spider/BIRD or production query logs.</li>
 </ol>
 <h2 id="data">Data</h2>
-<p><a href="https://github.com/comino/blog-experiments/tree/main/03">comino/blog-experiments/03</a>: 50 questions with reference SQL, all 3,300 scored runs, per-model response JSONs with raw API payloads, the classifier with its validation against the manual labels, and chart-generation scripts.</p>
+<p><a href="https://github.com/comino/blog-experiments/tree/main/03">comino/blog-experiments/03</a>: all 60 questions with reference SQL, all 3,960 scored runs, per-model response JSONs with raw API payloads, the classifier with its validation against the manual labels, and chart-generation scripts.</p>
 <hr>
-<p><em>50 questions × 3 runs per model, zero-shot, temperature 0, seed 42, via OpenRouter. February wave: 8 models, ClickHouse 25.11, 2026-02-12. August wave: 14 models, ClickHouse 26.1.2, 2026-08-10. Evaluated on Hetzner CX53.</em></p> <hr data-astro-cid-yvbahnfj> <p class="meta" data-astro-cid-yvbahnfj>
+<p><em>60 questions × 3 runs per model, zero-shot, temperature 0, seed 42, via OpenRouter. February wave: 8 models on T1-T5, ClickHouse 25.11, 2026-02-12. August wave: 14 models on T1-T5, ClickHouse 26.1.2, 2026-08-10. T6: all 22 models, 2026-08-11. Evaluated on Hetzner CX53.</em></p> <hr data-astro-cid-yvbahnfj> <p class="meta" data-astro-cid-yvbahnfj>
 Questions, corrections, or a consulting project?
 <a href="mailto:mail@sveneliasson.de" data-astro-cid-yvbahnfj>Mail me</a> or find me on
 <a href="https://github.com/comino" data-astro-cid-yvbahnfj>GitHub</a>.
