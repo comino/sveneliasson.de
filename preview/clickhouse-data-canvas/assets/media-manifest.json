@@ -1,0 +1,358 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-10-08T06:35:38.557272+00:00",
+  "status": "Media for the unlisted article preview at https://sveneliasson.de/preview/clickhouse-data-canvas/; recordings and GIF retain the documented original timing.",
+  "sources": {
+    "monarch": {
+      "path": "experiments/llm-clickhouse-exploration/performance/story-rehearsal-01/monarch-seasonal-footprint.mp4",
+      "sha256": "04585e0dc9e8924aac7be5ac303889d55bf864a3095b30df4c8ec3a8dae07413",
+      "bytes": 10706568
+    },
+    "elsa": {
+      "path": "experiments/llm-clickhouse-exploration/performance/story-rehearsal-06/elsa-and-milton.mp4",
+      "sha256": "594018418bdc72e1152a5ba8e36818794deafe909013759835bb7366057e0762",
+      "bytes": 12538221
+    },
+    "monarch_still": {
+      "path": "experiments/llm-clickhouse-exploration/performance/story-rehearsal-01/monarch-seasonal-footprint-final.png",
+      "sha256": "5b3aedfcfb5f3fb1cde9c844dd9f98a826492f4ac7e27531415d1806bfbc68b8",
+      "bytes": 731659
+    },
+    "elsa_still": {
+      "path": "experiments/llm-clickhouse-exploration/performance/story-rehearsal-06/elsa-and-milton-final.png",
+      "sha256": "5a486dfb7941fe17acfeb744718e413928ad6e565bf6fbdd66bab526226f90a7",
+      "bytes": 640209
+    },
+    "monarch_webm": {
+      "path": "experiments/llm-clickhouse-exploration/performance/story-rehearsal-01/monarch-seasonal-footprint.webm",
+      "sha256": "e5573da5bb159f0c384449bcfa124a080ed578b4f65141099ccd1a6edd150bbf",
+      "bytes": 8758886
+    },
+    "elsa_webm": {
+      "path": "experiments/llm-clickhouse-exploration/performance/story-rehearsal-06/elsa-and-milton.webm",
+      "sha256": "12e885636b6682be02ca6e529288142e996be38fd3602e550f58be7e26f7b651",
+      "bytes": 14049143
+    }
+  },
+  "assets": [
+    {
+      "filename": "monarch-demo.mp4",
+      "media_type": "video/mp4",
+      "source": "monarch",
+      "sha256": "04585e0dc9e8924aac7be5ac303889d55bf864a3095b30df4c8ec3a8dae07413",
+      "bytes": 10706568,
+      "duration_seconds": 86.84,
+      "width": 1600,
+      "height": 1000,
+      "fps": 25,
+      "audio": false,
+      "trim": {
+        "start_seconds": 0,
+        "end_seconds": 86.84
+      },
+      "playback_speed_multiplier": 1.0,
+      "speed_unchanged": true,
+      "source_byte_identical": true,
+      "reencoded": false,
+      "fast_start_moov_before_mdat": true,
+      "caption": "The complete Monarch rehearsal, 86.84 seconds at original speed. Queries, waits, the local 3D conversion, and the photo follow-up are retained.",
+      "limitations": [
+        "A recorded demonstration, not a statistically representative latency measurement.",
+        "All visible waits and camera animations remain in the recording."
+      ]
+    },
+    {
+      "filename": "elsa-milton-demo.mp4",
+      "media_type": "video/mp4",
+      "source": "elsa",
+      "sha256": "594018418bdc72e1152a5ba8e36818794deafe909013759835bb7366057e0762",
+      "bytes": 12538221,
+      "duration_seconds": 131.44,
+      "width": 1600,
+      "height": 1000,
+      "fps": 25,
+      "audio": false,
+      "trim": {
+        "start_seconds": 0,
+        "end_seconds": 131.44
+      },
+      "playback_speed_multiplier": 1.0,
+      "speed_unchanged": true,
+      "source_byte_identical": true,
+      "reencoded": false,
+      "fast_start_moov_before_mdat": true,
+      "caption": "The complete ELSA and Milton rehearsal, 131.44 seconds at original speed. The longer model waits remain visible.",
+      "limitations": [
+        "A recorded demonstration, not a statistically representative latency measurement.",
+        "All visible waits and camera animations remain in the recording."
+      ]
+    },
+    {
+      "filename": "monarch-preview.gif",
+      "media_type": "image/gif",
+      "source": "monarch",
+      "sha256": "bfb6dfea28ea4c54a8f1d5f885aa43ad80c1cf80e520c17fc061079882b44faa",
+      "bytes": 4554114,
+      "source_trim": {
+        "start_seconds": 67.0,
+        "end_seconds": 85.0,
+        "duration_seconds": 18.0
+      },
+      "encoded_duration_seconds": 18.01,
+      "duration_rounding_seconds": 0.01,
+      "width": 640,
+      "height": 520,
+      "frames": 144,
+      "nominal_fps": 8,
+      "frame_delays_ms": [
+        120,
+        130
+      ],
+      "loop_forever": true,
+      "playback_speed_multiplier": 1.0,
+      "speed_unchanged": true,
+      "crop_source_pixels": {
+        "x": 0,
+        "y": 0,
+        "width": 1230,
+        "height": 1000,
+        "purpose": "Remove the right chat sidebar while retaining the complete vertical canvas and photograph-credit area."
+      },
+      "resize_filter": "Lanczos",
+      "palette_max_colors": 96,
+      "dither": "none",
+      "frame_interpolation": false,
+      "transitions_added": false,
+      "caption": "An 18-second excerpt at original speed: the marked 3D view leads to a photo follow-up. The chat sidebar is cropped; the full recording above retains the complete query sequence.",
+      "limitations": [
+        "This is the late part of the Monarch demonstration, not the entire query sequence or an end-to-end benchmark.",
+        "Reduced resolution, 8 fps, and a limited GIF palette soften small labels and visibly reduce photo colour detail. Use the full-resolution MP4 to read values and credits.",
+        "The source crop retains the visible photo-credit area. Full attribution metadata is also included in this manifest.",
+        "GIF centisecond frame-delay rounding adds 0.01 seconds; no segment has been sped up, retimed, cut out, or replaced within the selected 18-second interval.",
+        "The loop restarts directly at the start of the excerpt; no artificial crossfade or reverse playback was added."
+      ]
+    },
+    {
+      "filename": "canvas-poster.webp",
+      "media_type": "image/webp",
+      "source": "monarch_still",
+      "sha256": "73f7dd791f0c09582edb39a4a7ef4fc68a5517d407e843df6a9a359c56f5480c",
+      "bytes": 510480,
+      "width": 1600,
+      "height": 1000,
+      "encoding": "lossless WebP",
+      "decoded_pixels_equal_source": true,
+      "trim_timestamp_seconds": null,
+      "caption": "The finished Monarch canvas: observation density, monthly counts, a month-by-latitude surface, and photographs from the selected cell.",
+      "provenance": "Native final screenshot captured during the same genuine rehearsal as its full MP4. It is not a video-frame extraction or a reconstructed screen. No cropping, retouching, overlays, or generated pixels."
+    },
+    {
+      "filename": "elsa-poster.webp",
+      "media_type": "image/webp",
+      "source": "elsa_still",
+      "sha256": "3e8353405ecb1ae61a58b76f9c555acf4090ecd64fa622ed0b88ede771ddfe36",
+      "bytes": 406614,
+      "width": 1600,
+      "height": 1000,
+      "encoding": "lossless WebP",
+      "decoded_pixels_equal_source": true,
+      "trim_timestamp_seconds": null,
+      "caption": "The finished ELSA/Milton canvas from the recorded session, including daily satellite imagery, reported longitude, and reported coastal vessel activity.",
+      "provenance": "Native final screenshot captured during the same genuine rehearsal as its full MP4. It is not a video-frame extraction or a reconstructed screen. No cropping, retouching, overlays, or generated pixels."
+    },
+    {
+      "filename": "monarch-demo.webm",
+      "media_type": "video/webm",
+      "codecs": "vp8",
+      "source": "monarch_webm",
+      "sha256": "e5573da5bb159f0c384449bcfa124a080ed578b4f65141099ccd1a6edd150bbf",
+      "bytes": 8758886,
+      "duration_seconds": 86.84,
+      "width": 1600,
+      "height": 1000,
+      "fps": 25,
+      "pixel_format": "yuv420p",
+      "audio": false,
+      "trim": {
+        "start_seconds": 0,
+        "end_seconds": 86.84
+      },
+      "playback_speed_multiplier": 1.0,
+      "speed_unchanged": true,
+      "source_byte_identical": true,
+      "reencoded": false,
+      "role": "Original VP8 WebM recording offered alongside the MP4 for browsers without an H.264 decoder.",
+      "equivalent_full_recording": "monarch-demo.mp4",
+      "caption": "The complete Monarch rehearsal, 86.84 seconds at original speed. Queries, waits, the local 3D conversion, and the photo follow-up are retained.",
+      "limitations": [
+        "A recorded demonstration, not a statistically representative latency measurement.",
+        "All visible waits and camera animations remain in the recording."
+      ]
+    },
+    {
+      "filename": "elsa-milton-demo.webm",
+      "media_type": "video/webm",
+      "codecs": "vp8",
+      "source": "elsa_webm",
+      "sha256": "12e885636b6682be02ca6e529288142e996be38fd3602e550f58be7e26f7b651",
+      "bytes": 14049143,
+      "duration_seconds": 131.44,
+      "width": 1600,
+      "height": 1000,
+      "fps": 25,
+      "pixel_format": "yuv420p",
+      "audio": false,
+      "trim": {
+        "start_seconds": 0,
+        "end_seconds": 131.44
+      },
+      "playback_speed_multiplier": 1.0,
+      "speed_unchanged": true,
+      "source_byte_identical": true,
+      "reencoded": false,
+      "role": "Original VP8 WebM recording offered alongside the MP4 for browsers without an H.264 decoder.",
+      "equivalent_full_recording": "elsa-milton-demo.mp4",
+      "caption": "The complete ELSA and Milton rehearsal, 131.44 seconds at original speed. The longer model waits remain visible.",
+      "limitations": [
+        "A recorded demonstration, not a statistically representative latency measurement.",
+        "All visible waits and camera animations remain in the recording."
+      ]
+    }
+  ],
+  "photo_attribution": {
+    "metadata_source": "experiments/llm-clickhouse-exploration/performance/story-rehearsal-01/browser.json, photos step saved query result",
+    "enlarged_photo": {
+      "photo_id": 546062167,
+      "photo_page": "https://www.inaturalist.org/photos/546062167",
+      "photo_credit": "Sheila S",
+      "photo_license": "CC-BY",
+      "scientific_name": "Danaus plexippus",
+      "observed_on": "2025-08-01"
+    },
+    "suggested_external_credit": "Enlarged caterpillar photo: \u00a9 Sheila S, CC-BY, via iNaturalist (photo 546062167). Other gallery images retain their original credits in the full recording.",
+    "gallery_results": [
+      {
+        "photo_id": 546062167,
+        "photo_page": "https://www.inaturalist.org/photos/546062167",
+        "photo_credit": "Sheila S",
+        "photo_license": "CC-BY",
+        "scientific_name": "Danaus plexippus",
+        "observed_on": "2025-08-01"
+      },
+      {
+        "photo_id": 546136559,
+        "photo_page": "https://www.inaturalist.org/photos/546136559",
+        "photo_credit": "Te\u00e1 Montagna",
+        "photo_license": "CC-BY",
+        "scientific_name": "Danaus plexippus",
+        "observed_on": "2025-08-01"
+      },
+      {
+        "photo_id": 545961426,
+        "photo_page": "https://www.inaturalist.org/photos/545961426",
+        "photo_credit": "Vicky Papuga",
+        "photo_license": "CC-BY",
+        "scientific_name": "Danaus plexippus",
+        "observed_on": "2025-08-01"
+      },
+      {
+        "photo_id": 546887055,
+        "photo_page": "https://www.inaturalist.org/photos/546887055",
+        "photo_credit": "Bernie Paquette",
+        "photo_license": "CC-BY",
+        "scientific_name": "Danaus plexippus",
+        "observed_on": "2025-08-01"
+      },
+      {
+        "photo_id": 549016947,
+        "photo_page": "https://www.inaturalist.org/photos/549016947",
+        "photo_credit": "Jason Leduc",
+        "photo_license": "CC0",
+        "scientific_name": "Danaus plexippus",
+        "observed_on": "2025-08-01"
+      },
+      {
+        "photo_id": 546062917,
+        "photo_page": "https://www.inaturalist.org/photos/546062917",
+        "photo_credit": "Bernie Paquette",
+        "photo_license": "CC-BY",
+        "scientific_name": "Danaus plexippus",
+        "observed_on": "2025-08-01"
+      },
+      {
+        "photo_id": 546126382,
+        "photo_page": "https://www.inaturalist.org/photos/546126382",
+        "photo_credit": "Michelle Orcutt",
+        "photo_license": "CC-BY",
+        "scientific_name": "Danaus plexippus",
+        "observed_on": "2025-08-01"
+      },
+      {
+        "photo_id": 546013289,
+        "photo_page": "https://www.inaturalist.org/photos/546013289",
+        "photo_credit": "Jill DeVito, PhD",
+        "photo_license": "CC0",
+        "scientific_name": "Danaus plexippus",
+        "observed_on": "2025-08-01"
+      },
+      {
+        "photo_id": 545961290,
+        "photo_page": "https://www.inaturalist.org/photos/545961290",
+        "photo_credit": "Vicky Papuga",
+        "photo_license": "CC-BY",
+        "scientific_name": "Danaus plexippus",
+        "observed_on": "2025-08-01"
+      },
+      {
+        "photo_id": 545914348,
+        "photo_page": "https://www.inaturalist.org/photos/545914348",
+        "photo_credit": "tyler bailey",
+        "photo_license": "CC-BY",
+        "scientific_name": "Danaus plexippus",
+        "observed_on": "2025-08-01"
+      },
+      {
+        "photo_id": 545924449,
+        "photo_page": "https://www.inaturalist.org/photos/545924449",
+        "photo_credit": "CKonecna",
+        "photo_license": "CC-BY",
+        "scientific_name": "Danaus plexippus",
+        "observed_on": "2025-08-01"
+      },
+      {
+        "photo_id": 545960021,
+        "photo_page": "https://www.inaturalist.org/photos/545960021",
+        "photo_credit": "Vicky Papuga",
+        "photo_license": "CC-BY",
+        "scientific_name": "Danaus plexippus",
+        "observed_on": "2025-08-01"
+      }
+    ]
+  },
+  "validation": {
+    "source_frames_inspected": true,
+    "gif_frames_inspected": true,
+    "full_mp4_duration_and_byte_hash_match": true,
+    "full_mp4_metadata_before_media_data": true,
+    "posters_lossless_pixel_match": true,
+    "gif_duration_and_loop_checked": true,
+    "speed_or_wait_removal": false,
+    "fabricated_screens_or_data": false,
+    "note": "Only retained recordings and native screenshots were read. Full MP4 and original VP8 WebM copies are unchanged; GIF sampling and cropping are documented above. Browser playback is checked separately by the blog-preview workflow.",
+    "full_webm_duration_codec_dimensions_and_byte_hash_match": true
+  },
+  "not_included": "The supplementary retained-results/zero-inference ELSA UI clip is not mixed into either full rehearsal recording.",
+  "updated_at": "2026-10-08T06:50:33.889237+00:00",
+  "supporting_assets": [
+    {
+      "filename": "stack.svg",
+      "sha256": "d6bd4166b5def36887ee622285c72d6c942933d27bf1e28b1fe66fd6e15bae47",
+      "bytes": 3856
+    },
+    {
+      "filename": "photo-credits.html",
+      "sha256": "7eb8c1be1250554ca16e02e21a4b476e724a29ee4c62290e7ebf35b83f94b80f",
+      "bytes": 3352
+    }
+  ]
+}
