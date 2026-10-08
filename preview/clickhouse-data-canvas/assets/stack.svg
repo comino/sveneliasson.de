@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 830" role="img" aria-labelledby="title description">
-  <title id="title">From a data question to a persistent canvas view</title>
-  <desc id="description">The browser sends a question and selected view to FastAPI. A gateway makes one OpenRouter call for a structured plan and SQL. The backend checks SQL and applies marked-data scope. The official ClickHouse MCP server queries ClickHouse. SQLite saves the query, result and history; result rows return to fixed browser renderers. Compatible local interactions reuse loaded data.</desc>
+  <title id="title">From a natural-language question to SQL and returned rows</title>
+  <desc id="description">The application supplies a question, schema and query context. A FastAPI gateway makes one OpenRouter planning call. The backend validates the generated SQL and applies selection filters. The official ClickHouse MCP server executes it with restricted database credentials. Rows return directly to the browser without another model call; SQL and results are saved in SQLite.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#8295aa"/></marker>
   </defs>
@@ -13,17 +13,17 @@
     .box { fill: #172231; stroke: #3b5068; stroke-width: 1.5; rx: 14; }
   </style>
   <rect width="760" height="830" rx="18" fill="#0d141f"/>
-  <text x="30" y="42" class="small" style="fill:#8ddfbd;letter-spacing:1px">ONE NEW DATA QUESTION</text>
+  <text x="30" y="42" class="small" style="fill:#8ddfbd;letter-spacing:1px">NATURAL LANGUAGE → SQL → ROWS</text>
 
   <rect x="28" y="64" width="704" height="120" class="box"/>
-  <text x="50" y="101" class="heading">Browser canvas and conversation</text>
-  <text x="50" y="132" class="body">Question + current views + selection</text>
-  <text x="50" y="163" class="small" style="fill:#8ddfbd">Local path: restyle, rotate and scrub loaded results</text>
+  <text x="50" y="101" class="heading">Question + database context</text>
+  <text x="50" y="132" class="body">Schema, field meanings, time range and requested output</text>
+  <text x="50" y="163" class="small" style="fill:#8ddfbd">Selected query and marked rows for follow-up questions</text>
   <path d="M194 184 V232" class="flow"/>
 
   <rect x="28" y="234" width="332" height="112" class="box"/>
   <text x="48" y="270" class="heading">FastAPI + gateway</text>
-  <text x="48" y="300" class="body">Schema and view context</text>
+  <text x="48" y="300" class="body">Schema and query context</text>
   <text x="48" y="326" class="small">One planning request</text>
   <rect x="432" y="234" width="300" height="112" class="box" style="fill:#211e35;stroke:#625987"/>
   <text x="451" y="270" class="heading">OpenRouter</text>
@@ -35,8 +35,8 @@
   <path d="M194 346 V402" class="flow"/>
 
   <rect x="28" y="404" width="704" height="108" class="box"/>
-  <text x="50" y="441" class="heading">SQL validation and marked-data scope</text>
-  <text x="50" y="472" class="body">SQLGlot · allowed tables · source filters · result limits</text>
+  <text x="50" y="441" class="heading">Check SQL and apply selection filters</text>
+  <text x="50" y="472" class="body">SQLGlot · allowed tables · no external sources · result limits</text>
   <text x="50" y="497" class="small">Access constraints do not prove semantic correctness</text>
   <path d="M194 512 V560" class="flow"/>
 
@@ -46,13 +46,13 @@
   <text x="48" y="655" class="small">Persistent authenticated client</text>
   <rect x="432" y="562" width="300" height="108" class="box" style="fill:#29261b;stroke:#75663a"/>
   <text x="452" y="599" class="heading">ClickHouse</text>
-  <text x="452" y="630" class="body">Wildlife / ships / storms</text>
+  <text x="452" y="630" class="body">Execute SQL over tables</text>
   <text x="452" y="655" class="small">Read-only query account</text>
   <path d="M360 599 H430" class="flow"/>
   <path d="M432 638 H362" class="flow"/>
   <path d="M194 670 V716" class="flow"/>
 
   <rect x="28" y="718" width="704" height="88" class="box" style="fill:#142b27;stroke:#3e7565"/>
-  <text x="50" y="753" class="heading">Save results in SQLite and stream to the canvas</text>
-  <text x="50" y="785" class="body">Plotly · Leaflet · SVG · Canvas2D · No narration pass</text>
+  <text x="50" y="753" class="heading">Return rows directly to the browser</text>
+  <text x="50" y="785" class="body">No second model call · save SQL and results in SQLite</text>
 </svg>

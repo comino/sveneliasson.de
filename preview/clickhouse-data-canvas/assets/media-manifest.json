@@ -346,13 +346,23 @@
   "supporting_assets": [
     {
       "filename": "stack.svg",
-      "sha256": "d6bd4166b5def36887ee622285c72d6c942933d27bf1e28b1fe66fd6e15bae47",
-      "bytes": 3856
+      "sha256": "40103aa465632e47fac6de565716c86c1f5e1776ef2ee3b2c42bfd0efbddc93f",
+      "bytes": 3883
     },
     {
       "filename": "photo-credits.html",
       "sha256": "7eb8c1be1250554ca16e02e21a4b476e724a29ee4c62290e7ebf35b83f94b80f",
       "bytes": 3352
+    },
+    {
+      "filename": "benchmark-accuracy-latency.svg",
+      "sha256": "44c064b951f383de8900cb29eff3519c1360e498ea467a414fce868d7d4dbc87",
+      "bytes": 60498
     }
-  ]
+  ],
+  "benchmark_figure": {
+    "filename": "benchmark-accuracy-latency.svg",
+    "source": "experiments/llm-clickhouse-exploration/benchmarks/llm-clickhouse-budget/results/full-analysis/accuracy-vs-delay.svg",
+    "modified": false
+  }
 }
