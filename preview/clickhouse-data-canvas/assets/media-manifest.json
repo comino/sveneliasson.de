@@ -342,12 +342,12 @@
     "full_webm_duration_codec_dimensions_and_byte_hash_match": true
   },
   "not_included": "The supplementary retained-results/zero-inference ELSA UI clip is not mixed into either full rehearsal recording.",
-  "updated_at": "2026-10-08T06:50:33.889237+00:00",
+  "updated_at": "2026-10-10T18:10:57.264360+00:00",
   "supporting_assets": [
     {
       "filename": "stack.svg",
-      "sha256": "40103aa465632e47fac6de565716c86c1f5e1776ef2ee3b2c42bfd0efbddc93f",
-      "bytes": 3883
+      "sha256": "b18cf9adaad719ee612ddb907d5a74a230524831a513b5f3d3503a5cf125677a",
+      "bytes": 3894
     },
     {
       "filename": "photo-credits.html",

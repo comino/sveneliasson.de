@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 830" role="img" aria-labelledby="title description">
   <title id="title">From a natural-language question to SQL and returned rows</title>
-  <desc id="description">The application supplies a question, schema and query context. A FastAPI gateway makes one OpenRouter planning call. The backend validates the generated SQL and applies selection filters. The official ClickHouse MCP server executes it with restricted database credentials. Rows return directly to the browser without another model call; SQL and results are saved in SQLite.</desc>
+  <desc id="description">The application supplies a question, table definitions and query context. A FastAPI gateway makes one model request through OpenRouter. The backend checks the generated SQL and applies selection filters. The official ClickHouse MCP server executes it with restricted database credentials. Rows return directly to the browser without another model call; SQL and results are saved in SQLite.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#8295aa"/></marker>
   </defs>
@@ -17,18 +17,18 @@
 
   <rect x="28" y="64" width="704" height="120" class="box"/>
   <text x="50" y="101" class="heading">Question + database context</text>
-  <text x="50" y="132" class="body">Schema, field meanings, time range and requested output</text>
+  <text x="50" y="132" class="body">Column names, meanings, dates and requested output</text>
   <text x="50" y="163" class="small" style="fill:#8ddfbd">Selected query and marked rows for follow-up questions</text>
   <path d="M194 184 V232" class="flow"/>
 
   <rect x="28" y="234" width="332" height="112" class="box"/>
   <text x="48" y="270" class="heading">FastAPI + gateway</text>
   <text x="48" y="300" class="body">Schema and query context</text>
-  <text x="48" y="326" class="small">One planning request</text>
+  <text x="48" y="326" class="small">One model request</text>
   <rect x="432" y="234" width="300" height="112" class="box" style="fill:#211e35;stroke:#625987"/>
   <text x="451" y="270" class="heading">OpenRouter</text>
   <text x="451" y="300" class="body">DeepSeek V4.1 Flash</text>
-  <text x="451" y="326" class="small">Pinned InferenceNet FP8</text>
+  <text x="451" y="326" class="small">Provider: InferenceNet FP8</text>
   <path d="M360 264 H430" class="flow"/>
   <path d="M432 312 H362" class="flow"/>
   <text x="396" y="369" text-anchor="middle" class="small">plan + SQL returned</text>
@@ -37,13 +37,13 @@
   <rect x="28" y="404" width="704" height="108" class="box"/>
   <text x="50" y="441" class="heading">Check SQL and apply selection filters</text>
   <text x="50" y="472" class="body">SQLGlot · allowed tables · no external sources · result limits</text>
-  <text x="50" y="497" class="small">Access constraints do not prove semantic correctness</text>
+  <text x="50" y="497" class="small">A query can pass these checks and still give a wrong answer</text>
   <path d="M194 512 V560" class="flow"/>
 
   <rect x="28" y="562" width="332" height="108" class="box"/>
   <text x="48" y="599" class="heading">ClickHouse MCP</text>
   <text x="48" y="630" class="body">Official run_query tool</text>
-  <text x="48" y="655" class="small">Persistent authenticated client</text>
+  <text x="48" y="655" class="small">Reuse the MCP connection</text>
   <rect x="432" y="562" width="300" height="108" class="box" style="fill:#29261b;stroke:#75663a"/>
   <text x="452" y="599" class="heading">ClickHouse</text>
   <text x="452" y="630" class="body">Execute SQL over tables</text>
