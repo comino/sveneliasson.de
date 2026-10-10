@@ -342,7 +342,7 @@
     "full_webm_duration_codec_dimensions_and_byte_hash_match": true
   },
   "not_included": "The supplementary retained-results/zero-inference ELSA UI clip is not mixed into either full rehearsal recording.",
-  "updated_at": "2026-10-10T18:32:11.253620+00:00",
+  "updated_at": "2026-10-10T18:40:09.472860+00:00",
   "supporting_assets": [
     {
       "filename": "stack.svg",
@@ -358,6 +358,18 @@
       "filename": "benchmark-accuracy-latency.svg",
       "sha256": "44c064b951f383de8900cb29eff3519c1360e498ea467a414fce868d7d4dbc87",
       "bytes": 60498
+    },
+    {
+      "filename": "benchmark-preview.png",
+      "media_type": "image/png",
+      "sha256": "5bc6e92c3c35a48dcb9feb007e60654aaaf263cc3ba55f35c5d94aa74c401dc7",
+      "bytes": 94500,
+      "width": 1719,
+      "height": 1082,
+      "source": "benchmarks/llm-clickhouse-budget/results/full-analysis/accuracy-vs-delay.png",
+      "source_repository": "https://github.com/comino/blog-experiments/tree/12796d59ab298b5959f542187ac94f76b5a7ec98/04-fast-cheap-clickhouse",
+      "source_byte_identical": true,
+      "role": "Homepage and social sharing preview of the original benchmark figure."
     }
   ],
   "benchmark_figure": {
