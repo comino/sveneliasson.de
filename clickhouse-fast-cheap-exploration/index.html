@@ -1,0 +1,199 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>How fast can cheap LLMs query ClickHouse?</title><meta name="description" content="Comparing cheap models on SQL accuracy, response time and cost, then using one to query wildlife and ship data."><link rel="canonical" href="https://sveneliasson.de/clickhouse-fast-cheap-exploration/"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><meta name="color-scheme" content="dark light"><meta property="og:title" content="How fast can cheap LLMs query ClickHouse?"><meta property="og:site_name" content="Sven Eliasson"><meta property="og:description" content="Comparing cheap models on SQL accuracy, response time and cost, then using one to query wildlife and ship data."><meta property="og:type" content="article"><meta property="og:url" content="https://sveneliasson.de/clickhouse-fast-cheap-exploration/"><meta name="twitter:card" content="summary"><link rel="alternate" type="application/rss+xml" title="Sven Eliasson" href="/rss.xml"><link rel="sitemap" href="/sitemap-index.xml"><link rel="stylesheet" href="/_astro/_slug_.BN0oVJjn.css">
+<style>.post-header[data-astro-cid-yvbahnfj]{margin-bottom:2rem}.post-header[data-astro-cid-yvbahnfj] .meta[data-astro-cid-yvbahnfj]{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center}.sep[data-astro-cid-yvbahnfj]{opacity:.6}.back[data-astro-cid-yvbahnfj]{text-decoration:none}.standfirst[data-astro-cid-yvbahnfj]{color:var(--muted);font-size:1.1rem;line-height:1.55;margin:.6rem 0 0;text-wrap:pretty}.cover[data-astro-cid-yvbahnfj]{display:block;width:100%;height:auto;max-height:32rem;object-fit:contain;background:var(--bg-raise);margin:0 0 2.2rem;box-shadow:var(--shadow)}.outro[data-astro-cid-yvbahnfj]{margin-top:3rem}.outro[data-astro-cid-yvbahnfj] p[data-astro-cid-yvbahnfj]{margin:0}.outro-title[data-astro-cid-yvbahnfj]{font-family:var(--mono);font-size:.85rem;font-weight:600;color:var(--accent);margin:0 0 .4rem!important}.post-nav[data-astro-cid-yvbahnfj]{display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin-top:1.2rem}.nav-card[data-astro-cid-yvbahnfj]{display:flex;flex-direction:column;gap:.25rem;padding:.9rem 1rem;border:1px solid var(--border);border-radius:10px;color:var(--fg);text-decoration:none;transition:border-color .15s ease,background .15s ease}.nav-card[data-astro-cid-yvbahnfj]:hover{border-color:var(--accent);background:var(--bg-raise);text-decoration:none}.nav-card[data-astro-cid-yvbahnfj].next{text-align:right}.nav-title[data-astro-cid-yvbahnfj]{font-weight:600;font-size:.95rem;line-height:1.35}.nav-card[data-astro-cid-yvbahnfj]:hover .nav-title[data-astro-cid-yvbahnfj]{color:var(--accent)}@media(max-width:34rem){.post-nav[data-astro-cid-yvbahnfj]{grid-template-columns:1fr}.nav-card[data-astro-cid-yvbahnfj].next{text-align:left}}
+</style></head> <body> <header class="site"> <div class="wrap"> <a href="/" class="brand"><span class="prompt">~$</span> sven.eliasson<span class="cursor" aria-hidden="true"></span></a> <nav aria-label="Main"> <a href="/" aria-current="page">writing</a><a href="/about/">about</a><a href="/contact/">contact</a><a href="/rss.xml" data-secondary="true">rss</a> </nav> </div> </header> <main class="wrap">  <article data-astro-cid-yvbahnfj> <header class="post-header" data-astro-cid-yvbahnfj> <p class="meta" data-astro-cid-yvbahnfj> <a href="/" class="back" data-astro-cid-yvbahnfj>← writing</a> <span class="sep" data-astro-cid-yvbahnfj>·</span> <time datetime="2026-10-10T00:00:00.000Z" data-astro-cid-yvbahnfj>10 Oct 2026</time> <span class="sep" data-astro-cid-yvbahnfj>·</span> 10 min read
+</p> <h1 data-astro-cid-yvbahnfj>How fast can cheap LLMs query ClickHouse?</h1> <p class="standfirst" data-astro-cid-yvbahnfj>Comparing cheap models on SQL accuracy, response time and cost, then using one to query wildlife and ship data.</p> <ul class="chips" aria-label="Tags" data-astro-cid-yvbahnfj> <li class="chip" data-astro-cid-yvbahnfj>clickhouse</li><li class="chip" data-astro-cid-yvbahnfj>llm</li><li class="chip" data-astro-cid-yvbahnfj>benchmark</li><li class="chip" data-astro-cid-yvbahnfj>data-exploration</li> </ul> </header>  <p>My <a href="https://sveneliasson.de/can-llms-write-clickhouse-sql-zero-shot-evaluation/">previous benchmark of 22 models</a> tested whether LLMs could write ClickHouse SQL. This time I wanted to know how quickly a cheap model could turn a question into a database result, and what each request would cost.</p>
+<p>In this run, DeepSeek V4.1 Flash returned a correct answer in <strong>88%</strong> of attempts. The median wait from sending the question to receiving the database result was <strong>672 ms</strong>. Model charges came to about <strong>four US cents per 1,000 attempts</strong>, with input caching.</p>
+<p>Latency matters because one answer often leads to the next question. Fast, inexpensive replies could make that sequence a more practical way to explore data: ask, inspect a chart, narrow the question and ask again. I tried it in a small prototype using the same model.</p>
+<h2 id="the-benchmark-correctness-delay-and-cost">The benchmark: correctness, delay and cost</h2>
+<p>The October 7, 2026 run used <strong>60 questions, five repetitions and five models</strong>: <strong>1,500 attempts</strong> against a synthetic ClickHouse database with one million events and 10,000 users. I ran the generated SQL and compared the returned data with reference results checked before the test. Each attempt had one model call, with no retries or SQL repairs.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Model</th><th align="right">Correct</th><th align="right">Median</th><th align="right">p95</th><th align="right">USD / 1,000</th></tr></thead><tbody><tr><td>DeepSeek V4.1 Flash</td><td align="right">88.0%</td><td align="right">0.672 s</td><td align="right">1.847 s</td><td align="right">$0.041</td></tr><tr><td>GPT-6 Luna</td><td align="right">79.0%</td><td align="right">1.202 s</td><td align="right">2.175 s</td><td align="right">$0.151</td></tr><tr><td>Solar Mini 4</td><td align="right">64.3%</td><td align="right">3.106 s</td><td align="right">7.776 s</td><td align="right">$0.039</td></tr><tr><td>Mercury 2.5</td><td align="right">59.0%</td><td align="right">0.792 s</td><td align="right">1.456 s</td><td align="right">Unknown</td></tr><tr><td>Granite 4.2 8B</td><td align="right">58.7%</td><td align="right">0.909 s</td><td align="right">1.704 s</td><td align="right">$0.041</td></tr></tbody></table>
+<p>The timer starts when the request goes to OpenRouter and stops when the ClickHouse result has arrived and been parsed. It covers the complete SQL response, query execution and returned rows. The p95 column shows the time within which 95% of completed results arrived.</p>
+<p>The timing columns include wrong answers that executed successfully. Errors and timeouts count as failures when calculating accuracy and the share of correct answers delivered on time. Mercury had 39 rate-limit failures and six timeouts, with incomplete billing. Every model used a fixed provider through OpenRouter with reasoning disabled. Luna used OpenAI’s priority service.</p>
+<p><img src="/media/clickhouse-fast-cheap-exploration/benchmark-accuracy-latency.svg" alt="Accuracy and median response time for the five tested models"></p>
+<p><em>The bars show 95% confidence intervals. These are based on the sixty questions, keeping each question’s five attempts together. <a href="/media/clickhouse-fast-cheap-exploration/benchmark-accuracy-latency.svg">Open the full-size figure</a>.</em></p>
+<p>The costs reflect this repeated set of requests. For DeepSeek, <strong>82.9% of input tokens came from the prompt cache</strong>. Pricing those tokens without the cache discount gives an estimate of <strong>$0.083 per 1,000 attempts</strong>. Solar’s price included a promotion. Hosting is excluded. The <a href="https://github.com/comino/blog-experiments/blob/12796d59ab298b5959f542187ac94f76b5a7ec98/04-fast-cheap-clickhouse/benchmarks/llm-clickhouse-budget/results/full-analysis/RESULTS.md">full results and methodology</a> record the prices and settings used for this run.</p>
+<p>I selected models announced or released in the two months before the run. I could not test Mistral Large 4 or Qwen3.8 Flash because the account’s privacy settings blocked their available providers. The test data and required outputs differ from the previous article, so the accuracy scores cannot be compared directly.</p>
+<h2 id="which-questions-worked">Which questions worked?</h2>
+<p>The questions were split into six difficulty levels. DeepSeek answered all thirty questions in the first three levels correctly on all five repeats: <strong>150/150 attempts</strong>. These cover filtering, aggregation and simpler ClickHouse operations. On the hardest ten questions, it passed <strong>25/50 attempts</strong>.</p>
+<p>Granite, an 8B model, passed all fifty attempts at the first level, then 35/50 at the second and 17/50 at the third. DeepSeek V4.1 Flash is a much larger model that uses only part of its network for each token. The stronger result here came from a large model with a low API price.</p>
+<p>Some failures were easy to miss without checking the data. In a retention question, DeepSeek counted each day’s users separately instead of following the group from the first day. The SQL ran but answered a different question. Another query passed a <code>DateTime64</code> value to <code>windowFunnel</code> and failed on the tested ClickHouse version.</p>
+<h2 id="the-provider-affects-response-time">The provider affects response time</h2>
+<p>A second study ran another <strong>1,500 attempts</strong>, switching between five DeepSeek provider and precision combinations, one request at a time. It included an older V4 Flash baseline alongside V4.1 Flash. Two of the V4.1 combinations returned these results:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Route</th><th align="right">Correct</th><th align="right">Median</th><th align="right">p95</th><th align="right">USD / 1,000</th></tr></thead><tbody><tr><td>InferenceNet FP8</td><td align="right">88.7%</td><td align="right">0.800 s</td><td align="right">1.823 s</td><td align="right">$0.043</td></tr><tr><td>Sail Research FP4</td><td align="right">90.7%</td><td align="right">1.716 s</td><td align="right">3.743 s</td><td align="right">$0.028</td></tr></tbody></table>
+<p>The study’s rule favored cost once accuracy and five-second response targets were met; Sail won. For the prototype, I chose InferenceNet because <strong>85.3%</strong> of attempts returned a correct result within two seconds, compared with <strong>60.0%</strong> for Sail. The extra cost was about <strong>$0.015 per 1,000 attempts</strong>. Sail’s accuracy was two percentage points higher, but the 95% confidence interval for the difference ran from −1 to +6 points.</p>
+<p>FP8 and FP4 are the eight-bit and four-bit formats reported by the providers. Different providers ran the two formats, so this test cannot tell us how much of the difference came from quantization alone. Cache discounts also affect the bill. The <a href="https://github.com/comino/blog-experiments/blob/12796d59ab298b5959f542187ac94f76b5a7ec98/04-fast-cheap-clickhouse/benchmarks/llm-clickhouse-deepseek-quant/NOTES.md">provider comparison</a> has the full details.</p>
+<p>The prototype uses <code>deepseek/deepseek-v4.1-flash</code> on <code>inference-net/fp8</code>, with FP8 required, fallback disabled and reasoning disabled. The gateway handles one model request at a time. The reported timings are for one user.</p>
+<h2 id="from-a-question-to-executed-sql">From a question to executed SQL</h2>
+<p>The application sends the model a question, the table definitions and the information needed to interpret the columns. The model writes SQL. The application checks the query, runs it with restricted database credentials and returns the rows.</p>
+<p>The benchmark prompt includes column types, the ClickHouse version, the UTC time zone, the available dates and values such as event types. It asks for one <code>SELECT</code>, without an explanation or <code>FORMAT</code> clause. Each question also specifies the columns, order and limits expected in the answer.</p>
+<p>For example, one recorded question was:</p>
+<blockquote>
+<p>Show the number of events per day in January 2024.
+Output contract: return only these columns, in this order: day as Date, event count. Order/limit: day ascending.</p>
+</blockquote>
+<p>DeepSeek generated this query on the first run:</p>
+<pre class="astro-code astro-code-themes github-light github-dark" style="background-color:#fff;--shiki-dark-bg:#24292e;color:#24292e;--shiki-dark:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="sql"><code><span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">SELECT</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> toDate(</span><span style="color:#D73A49;--shiki-dark:#F97583">timestamp</span><span style="color:#24292E;--shiki-dark:#E1E4E8">) </span><span style="color:#D73A49;--shiki-dark:#F97583">AS</span><span style="color:#D73A49;--shiki-dark:#F97583"> day</span><span style="color:#24292E;--shiki-dark:#E1E4E8">, </span><span style="color:#005CC5;--shiki-dark:#79B8FF">count</span><span style="color:#24292E;--shiki-dark:#E1E4E8">() </span><span style="color:#D73A49;--shiki-dark:#F97583">AS</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> event_count</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">FROM</span><span style="color:#24292E;--shiki-dark:#E1E4E8"> events</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">WHERE</span><span style="color:#D73A49;--shiki-dark:#F97583"> timestamp</span><span style="color:#D73A49;--shiki-dark:#F97583"> >=</span><span style="color:#032F62;--shiki-dark:#9ECBFF"> '2024-01-01 00:00:00'</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">  AND</span><span style="color:#D73A49;--shiki-dark:#F97583"> timestamp</span><span style="color:#D73A49;--shiki-dark:#F97583"> &#x3C;</span><span style="color:#032F62;--shiki-dark:#9ECBFF"> '2024-02-01 00:00:00'</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">GROUP BY</span><span style="color:#D73A49;--shiki-dark:#F97583"> day</span></span>
+<span class="line"><span style="color:#D73A49;--shiki-dark:#F97583">ORDER BY</span><span style="color:#D73A49;--shiki-dark:#F97583"> day</span><span style="color:#D73A49;--shiki-dark:#F97583"> ASC</span></span></code></pre>
+<p>It returned 31 rows matching the reference. The model received the schema and question; ClickHouse read the events and counted them by day. Using February 1 as the exclusive end includes all of January, whatever the timestamp precision.</p>
+<p>The benchmark script calls ClickHouse’s HTTP API directly and adds <code>FORMAT JSONCompact</code> itself. It uses a read-only account, two query threads, a 2 GB memory limit, a ten-second execution limit and limits on the rows and bytes returned. The query cache is disabled. Earlier reference and trial runs had already read the data, so storage caches were warm. The timer stops before scoring the answer.</p>
+<p>For the prototype, I used the <a href="https://github.com/ClickHouse/mcp-clickhouse">official ClickHouse MCP server</a>, which provides a <code>run_query</code> tool. Once the MCP client is connected and authenticated, the call is:</p>
+<pre class="astro-code astro-code-themes github-light github-dark" style="background-color:#fff;--shiki-dark-bg:#24292e;color:#24292e;--shiki-dark:#e1e4e8; overflow-x: auto;" tabindex="0" data-language="python"><code><span class="line"><span style="color:#24292E;--shiki-dark:#E1E4E8">result </span><span style="color:#D73A49;--shiki-dark:#F97583">=</span><span style="color:#D73A49;--shiki-dark:#F97583"> await</span><span style="color:#005CC5;--shiki-dark:#79B8FF"> MCP</span><span style="color:#24292E;--shiki-dark:#E1E4E8">.call_tool(</span><span style="color:#032F62;--shiki-dark:#9ECBFF">"run_query"</span><span style="color:#24292E;--shiki-dark:#E1E4E8">, {</span><span style="color:#032F62;--shiki-dark:#9ECBFF">"query"</span><span style="color:#24292E;--shiki-dark:#E1E4E8">: sql})</span></span></code></pre>
+<p>A Python/FastAPI backend sends the question through a gateway to OpenRouter. The model returns SQL, a chart type and the columns to use in a <code>paint_canvas</code> tool call. The backend checks the response and sends the SQL to ClickHouse through MCP.</p>
+<p><img src="/media/clickhouse-fast-cheap-exploration/stack.svg" alt="How a question becomes SQL and a ClickHouse result in the prototype"></p>
+<p>SQLGlot checks the query’s structure before execution. The backend accepts one read query using only tables from the selected dataset. It rejects writes, external table functions, model-supplied query settings and output destinations. The ClickHouse account enforces its own read-only permissions and resource limits.</p>
+<p>For a follow-up such as “show photographs from this cell”, the application uses the saved SQL and selected result row to recover the original species, date and geographic filters. It applies those filters to the new query. Existing views supply their SQL, column names and a two-row sample to the model. The full dataset stays in ClickHouse.</p>
+<p>The browser draws the returned rows without asking the model to write a summary first. It uses Plotly for charts, Leaflet for maps and tracks, SVG for seasonal wheels and Canvas2D for surfaces that can be rotated. SQLite keeps the SQL and results. LibreChat supplies login; FastAPI handles the queries.</p>
+<h2 id="trying-it-on-wildlife-and-ship-data">Trying it on wildlife and ship data</h2>
+<p>I tried the same loop in an interface with chat on the right and a canvas on the left. A question creates a view. From there, I can ask for a comparison, select part of a chart and inspect the records behind it.</p>
+<p>I loaded <strong>282.9 million wildlife observations</strong> from the <a href="https://github.com/inaturalist/inaturalist-open-data">iNaturalist open dataset</a>, and <strong>109.3 million ship position reports</strong> from <a href="https://github.com/ocm-marinecadastre/ais-vessel-traffic">NOAA</a>, with <a href="https://www.ncei.noaa.gov/products/international-best-track-archive">IBTrACS storm tracks</a>. The ship data covers Gulf and Florida waters from September 15 through October 15, 2024. Wildlife photographs load on demand, with license and photographer credits.</p>
+<p>In the first example, I ask for a map of monarch observation density in 2025, add a seasonal view and then a heatmap of month against latitude. I select August at 40–45° north, switch to a 3D surface and ask for photographs from that cell. The last query lets me inspect the observations behind that part of the chart.</p>
+<video controls playsinline preload="metadata" width="1600" height="1000" style="width:100%;height:auto;border-radius:10px" poster="/media/clickhouse-fast-cheap-exploration/canvas-poster.webp" aria-label="Monarch exploration from a density map to seasonal counts and photographs">
+  <source src="/media/clickhouse-fast-cheap-exploration/monarch-demo.mp4" type="video/mp4">
+  <source src="/media/clickhouse-fast-cheap-exploration/monarch-demo.webm" type="video/webm">
+  <a href="/media/clickhouse-fast-cheap-exploration/monarch-demo.mp4">Watch the monarch demonstration.</a>
+</video>
+<p><em>The 87-second recording runs at original speed, including model and database waits. A script types the prepared prompts and clicks the controls. The queries ran during the recording.</em></p>
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="/media/clickhouse-fast-cheap-exploration/canvas-poster.webp">
+  <img src="/media/clickhouse-fast-cheap-exploration/monarch-preview.gif" width="640" height="520" loading="lazy" alt="A marked 3D result, a photo query, gallery arrival and an enlarged caterpillar photograph">
+</picture>
+<p><em>An 18-second excerpt at original speed, with the chat sidebar cropped. The full video retains the prompts. Enlarged photograph: © <a href="https://www.inaturalist.org/photos/546062167">Sheila S</a>, CC-BY. <a href="/media/clickhouse-fast-cheap-exploration/photo-credits.html">All photograph credits</a>.</em></p>
+<p>For a selected heatmap, “make it 3d” changes the view using the same rows. It makes no model call and runs no SQL. Rotation and playback also use loaded data. A new question about the records goes through the query loop again.</p>
+<p>The other examples compare fungal seasons between hemispheres, examine moving and nearly stationary Mississippi vessels, and replay the cargo ship ELSA alongside Hurricane Milton. The ELSA example then compares daily vessel counts around Tampa Bay and Port Everglades with each area’s early-October baseline:</p>
+<video controls playsinline preload="none" width="1600" height="1000" style="width:100%;height:auto;border-radius:10px" poster="/media/clickhouse-fast-cheap-exploration/elsa-poster.webp" aria-label="ELSA and Milton with historical ship and storm playback and coastal activity queries">
+  <source src="/media/clickhouse-fast-cheap-exploration/elsa-milton-demo.mp4" type="video/mp4">
+  <source src="/media/clickhouse-fast-cheap-exploration/elsa-milton-demo.webm" type="video/webm">
+  <a href="/media/clickhouse-fast-cheap-exploration/elsa-milton-demo.mp4">Watch the ELSA and Milton demonstration.</a>
+</video>
+<p><em>The full recording lasts 2 minutes 11 seconds, including the longer waits. Playback estimates positions between nearby historical reports and leaves long gaps blank. Optional <a href="https://nasa-gibs.github.io/gibs-api-docs/access-basics/">NASA GIBS imagery</a> shows the selected day, rather than each playback timestamp.</em></p>
+<h2 id="timing-the-complete-interactions">Timing the complete interactions</h2>
+<p>The prototype sends more context than the benchmark and asks for chart instructions as well as SQL. The four completed demo runs used <strong>17 model requests</strong>, with a <strong>2.35-second median wait for data</strong> and <strong>$0.00843</strong> in model charges:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Sequence</th><th align="right">Calls</th><th align="right">Time to data</th><th align="right">USD</th></tr></thead><tbody><tr><td>Monarch year</td><td align="right">4</td><td align="right">1.75–3.23 s</td><td align="right">$0.00172</td></tr><tr><td>Fungal seasons</td><td align="right">4</td><td align="right">1.87–2.35 s</td><td align="right">$0.00194</td></tr><tr><td>Mississippi ships</td><td align="right">4</td><td align="right">2.01–4.11 s</td><td align="right">$0.00205</td></tr><tr><td>ELSA and Milton</td><td align="right">5</td><td align="right">5.75–16.62 s</td><td align="right">$0.00273</td></tr></tbody></table>
+<p>The slowest request spent <strong>15.43 seconds</strong> waiting for the model and <strong>0.72 seconds</strong> in the query tool. Across the four runs, the tool took <strong>28–722 ms</strong>, including MCP transport and result processing. Four chart changes that reused loaded data were measured as ready by the browser in <strong>138–257 ms</strong>, without inference.</p>
+<p>These timings stop when the browser has the result data. Animations and photograph loading can continue afterward. The demos use prepared prompts; they do not measure accuracy on new questions.</p>
+<p>The longer ELSA waits interrupt the flow of questions. Even the shorter waits of roughly two seconds are noticeable when each result suggests something else to look at. Faster replies would make it easier to follow those questions while keeping the previous result in mind.</p>
+<h2 id="the-sql-still-needs-checking">The SQL still needs checking</h2>
+<p>The saved demos passed <strong>76 automated checks</strong>, including comparisons with independent reference queries. Earlier attempts had errors. One photo query returned 773 rows because it limited each species to twelve photos instead of limiting the whole result. A date filter left out the final day, and a speed query failed because it grouped by an aggregate alias. The <a href="https://github.com/comino/blog-experiments/blob/12796d59ab298b5959f542187ac94f76b5a7ec98/04-fast-cheap-clickhouse/performance/demo-stories-01/summary.json">saved runs</a> include the failed attempts; the <a href="https://github.com/comino/blog-experiments/blob/12796d59ab298b5959f542187ac94f76b5a7ec98/04-fast-cheap-clickhouse/demos/README.md">runbook</a> gives the successful prompts.</p>
+<p>The meaning of the data needs care too. Wildlife counts measure reported observations. The coastal activity charts count ships sending position reports inside each map area. A long period at low speed does not show why a ship was there. The prototype leaves earlier results intact after a failed query and waits for another request; it does not repair the SQL automatically.</p>
+<h2 id="code-and-measurements">Code and measurements</h2>
+<p>The <a href="https://github.com/comino/blog-experiments/tree/12796d59ab298b5959f542187ac94f76b5a7ec98/04-fast-cheap-clickhouse">public code and measurements</a> contain the saved benchmark requests, SQL, results, scoring code, data loaders and prototype. The <a href="https://github.com/comino/blog-experiments/tree/12796d59ab298b5959f542187ac94f76b5a7ec98/04-fast-cheap-clickhouse/benchmarks/llm-clickhouse-budget">benchmark directory</a> explains how to check the saved results without making new model calls.</p>
+<p>The benchmark suggests that cheap models can already handle many ordinary data questions, while complex queries still need closer checking. Low cost makes repeated requests affordable. Low latency could make those requests a routine way to explore: see a result, follow a question it raises and keep going.</p> </article> <aside class="outro card" data-astro-cid-yvbahnfj> <p class="outro-title" data-astro-cid-yvbahnfj># feedback</p> <p data-astro-cid-yvbahnfj>
+Spotted a mistake, have a question about the setup, or want to talk about a
+      project? <a href="/contact/" data-astro-cid-yvbahnfj>Send me a message</a> or mail
+<a href="mailto:mail@sveneliasson.de" data-astro-cid-yvbahnfj>mail@sveneliasson.de</a>.
+</p> </aside> <nav class="post-nav" aria-label="More posts" data-astro-cid-yvbahnfj> <a class="nav-card" href="/can-llms-write-clickhouse-sql-zero-shot-evaluation/" data-astro-cid-yvbahnfj> <span class="meta" data-astro-cid-yvbahnfj>← older</span> <span class="nav-title" data-astro-cid-yvbahnfj>Can LLMs Write ClickHouse SQL? A Zero-Shot Benchmark of 22 Models</span> </a> <span data-astro-cid-yvbahnfj></span> </nav>   </main> <footer class="site"> <div class="wrap"> <span>© 2026 Sven Eliasson</span> <span> <a href="https://github.com/comino">github</a> ·
+<a href="https://gitlab.com/comino">gitlab</a> ·
+<a href="/contact/">contact</a> ·
+<a href="/rss.xml">rss</a> </span> </div> </footer> <script type="module">if(navigator.clipboard)for(const e of document.querySelectorAll("article pre")){const t=document.createElement("button");t.type="button",t.className="copy-btn",t.textContent="copy",t.setAttribute("aria-label","Copy code to clipboard"),t.addEventListener("click",async()=>{const o=e.querySelector("code")?.innerText??e.innerText;try{await navigator.clipboard.writeText(o.replace(/\n$/,"")),t.textContent="copied",t.classList.add("done"),setTimeout(()=>{t.textContent="copy",t.classList.remove("done")},1600)}catch{t.textContent="failed"}}),e.appendChild(t)}</script> </body> </html>

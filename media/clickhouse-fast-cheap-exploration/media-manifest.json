@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "created_at": "2026-10-08T06:35:38.557272+00:00",
-  "status": "Media for the unlisted article preview at https://sveneliasson.de/preview/clickhouse-data-canvas/; recordings and GIF retain the documented original timing.",
+  "status": "Published article media. Recordings retain their original bytes and timing; GIF trim, frame sampling, crop and photo credits are documented below.",
   "sources": {
     "monarch": {
       "path": "experiments/llm-clickhouse-exploration/performance/story-rehearsal-01/monarch-seasonal-footprint.mp4",
@@ -342,7 +342,7 @@
     "full_webm_duration_codec_dimensions_and_byte_hash_match": true
   },
   "not_included": "The supplementary retained-results/zero-inference ELSA UI clip is not mixed into either full rehearsal recording.",
-  "updated_at": "2026-10-10T18:10:57.264360+00:00",
+  "updated_at": "2026-10-10T18:32:11.253620+00:00",
   "supporting_assets": [
     {
       "filename": "stack.svg",
@@ -364,5 +364,7 @@
     "filename": "benchmark-accuracy-latency.svg",
     "source": "experiments/llm-clickhouse-exploration/benchmarks/llm-clickhouse-budget/results/full-analysis/accuracy-vs-delay.svg",
     "modified": false
-  }
+  },
+  "article_url": "https://sveneliasson.de/clickhouse-fast-cheap-exploration/",
+  "public_source_snapshot": "https://github.com/comino/blog-experiments/tree/12796d59ab298b5959f542187ac94f76b5a7ec98/04-fast-cheap-clickhouse"
 }
